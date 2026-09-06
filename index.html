@@ -306,8 +306,11 @@
   .sit.learned .halo,
   .sit:not([data-phase="idle"]) .halo { display: none; }
 
-  .sit:not([data-phase="idle"]) .handle { opacity: 0; }
-  .sit:not([data-phase="idle"]) #rings { cursor: default; }
+  /* The settle grip goes when the sit starts -- that duration is spent. The
+     meditate grip stays, because dragging it in is how you cut a sit short
+     without abandoning it. */
+  .sit:not([data-phase="idle"]) .handle-settle { opacity: 0; }
+  .sit[data-phase="waiting"] .handle-meditate { opacity: 0; }
 
   .ring-centre {
     position: absolute;
@@ -355,6 +358,7 @@
   .btn[hidden] { display: none; }
 
   .log {
+    transition: opacity 700ms ease;
     font-family: var(--display);
     font-size: 20px;
     font-weight: 400;
@@ -367,14 +371,14 @@
   .log em { font-style: italic; color: var(--rose); }
   .log b { font-weight: 400; color: var(--text); }
 
-  .sit[data-phase="waiting"] .legend,
-  .sit[data-phase="sitting"] .legend,
-  .sit[data-phase="waiting"] .tune,
-  .sit[data-phase="sitting"] .tune,
-  .sit[data-phase="waiting"] .voices,
-  .sit[data-phase="sitting"] .voices,
-  .sit[data-phase="waiting"] .wordmark,
-  .sit[data-phase="sitting"] .wordmark { opacity: 0.12; pointer-events: none; }
+  /* Once a sit is running, nothing else on the page can do anything, so nothing
+     else on the page is there. All the way to zero rather than dimmed: a ghost of
+     a control still reads as something you might be able to use. */
+  .sit:not([data-phase="idle"]) .legend,
+  .sit:not([data-phase="idle"]) .tune,
+  .sit:not([data-phase="idle"]) .voices,
+  .sit:not([data-phase="idle"]) .log,
+  .sit:not([data-phase="idle"]) .wordmark { opacity: 0; pointer-events: none; }
 
   :focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
 
@@ -945,6 +949,7 @@
     // Clockwise from twelve, so the value grows the way the arc is drawn.
     let degrees = Math.atan2(point.y, point.x) * 180 / Math.PI + 90;
     if (degrees < 0) degrees += 360;
+    if (session) return shortenSit(degrees);
     const range = el[dial.range];
     const previous = Number(range.value);
     let units = Math.round(degrees / 360 * RING_UNITS);
@@ -956,6 +961,20 @@
     else if (units - previous > RING_UNITS / 2) units = 0;
     range.value = String(Math.max(Number(range.min), Math.min(Number(range.max), units)));
     renderDials();
+  }
+
+  // Dragging the outer tip inward while sitting brings the closing bell forward.
+  // Only inward: overshooting would otherwise silently hand you back time you had
+  // decided not to take, and the whole point is a graceful early finish rather
+  // than an editable clock.
+  function shortenSit(degrees) {
+    const now = Date.now();
+    const asked = Math.round(degrees / 360 * RING_UNITS) * 60000;
+    const remaining = session.endAt - now;
+    if (asked >= remaining) return;            // never extend
+    session.endAt = now + Math.max(0, asked);
+    scheduleBackstops();
+    tick();
   }
 
   function onDragMove(event) {
@@ -973,10 +992,12 @@
     // Suppressed first, and whether or not a ring was hit: a press that lands in
     // the hole would otherwise begin a native text-selection drag.
     event.preventDefault();
-    if (session) return;                       // durations are fixed once running
+    // Mid-sit, only the outer ring answers, and only to shorten.
+    if (session && !session.rang) return;
     const point = ringPoint(event);
     const dial = nearestDial(point);
     if (!dial) return;
+    if (session && dial !== DIALS[0]) return;
     dragging = dial;
     // Capture is an optimisation, not the mechanism. Mobile Safari has thrown on
     // setPointerCapture for SVG elements, and when it did, everything after it in
@@ -1012,9 +1033,17 @@
 
     // Absolute deadlines, not accumulated intervals, so a throttled frame loop
     // cannot make the sit drift longer than it was set for.
+    scheduleBackstops();
+    loop();
+  }
+
+  function scheduleBackstops() {
+    // Re-armed whenever endAt moves: a shortened sit whose backstop still points
+    // at the original time would ring late on a phone whose frame loop is asleep.
+    while (backstops.length) clearTimeout(backstops.pop());
+    const now = Date.now();
     backstops.push(setTimeout(() => tick(), Math.max(0, session.bellAt - now) + 40));
     backstops.push(setTimeout(() => tick(), Math.max(0, session.endAt - now) + 40));
-    loop();
   }
 
   function tick() {
@@ -1054,10 +1083,16 @@
   function finish(outcome) {
     if (!session) return;
     const elapsedMs = Date.now() - session.startedAt;
+    // Both numbers, because a sit dragged short is neither the sit that was set
+    // nor an abandoned one, and the log should not have to pretend it is either.
+    const sat = session.rang
+      ? Math.max(0, Math.round((Date.now() - session.bellAt) / 60000))
+      : 0;
     const record = {
       at: new Date().toISOString(),
       first: session.first,
       sit: session.sit,
+      sat,
       elapsedMs,
       outcome,
     };
@@ -1101,7 +1136,10 @@
       { hour: "2-digit", minute: "2-digit" });
 
     if (record.outcome === "complete") {
-      return day + " &middot; " + time + " &middot; <b>" + record.sit + " min</b>";
+      const sat = record.sat === undefined ? record.sit : record.sat;
+      const shortened = sat !== record.sit
+        ? " <em>(set " + record.sit + ")</em>" : "";
+      return day + " &middot; " + time + " &middot; <b>" + sat + " min</b>" + shortened;
     }
     const minutes = Math.max(0, Math.round(record.elapsedMs / 60000));
     return day + " &middot; " + time + " &middot; <em>left at " + minutes +
