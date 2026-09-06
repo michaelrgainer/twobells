@@ -279,6 +279,31 @@
   .sit[data-phase="sitting"] .track-settle,
   .sit[data-phase="sitting"] .arc-settle { opacity: 0; }
 
+  /* A ring you can drag looks exactly like a ring you cannot, so the tips breathe
+     until the gesture has been used once -- then the flag in localStorage stops it
+     for good. A timer for sitting still has no business pulsing at someone
+     forever; it only has to teach the thing once. */
+  .halo {
+    fill: none;
+    stroke-width: 2;
+    pointer-events: none;
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: grip-pulse 2.6s ease-out infinite;
+  }
+
+  .halo-meditate { stroke: var(--ring); }
+  .halo-settle { stroke: var(--ring-soft); }
+
+  @keyframes grip-pulse {
+    0%   { transform: scale(1);   opacity: 0.55; }
+    70%  { transform: scale(2.8); opacity: 0; }
+    100% { transform: scale(2.8); opacity: 0; }
+  }
+
+  .sit.learned .halo,
+  .sit:not([data-phase="idle"]) .halo { display: none; }
+
   .sit:not([data-phase="idle"]) .handle { opacity: 0; }
   .sit:not([data-phase="idle"]) #rings { cursor: default; }
 
@@ -353,6 +378,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     * { transition-duration: 1ms !important; }
+    .halo { animation: none; opacity: 0.5; }
   }
 </style>
 
@@ -395,6 +421,8 @@
               transform="rotate(-90 100 100)"></circle>
       <circle class="ring-arc arc-settle" id="arc-first" cx="100" cy="100" r="66"
               transform="rotate(-90 100 100)"></circle>
+      <circle class="halo halo-meditate" id="halo-sit" r="8"></circle>
+      <circle class="halo halo-settle" id="halo-first" r="8"></circle>
       <circle class="handle handle-meditate" id="grip-sit" r="8"></circle>
       <circle class="handle handle-settle" id="grip-first" r="8"></circle>
     </svg>
@@ -423,6 +451,8 @@
     arcSit: document.getElementById("arc-sit"),
     gripFirst: document.getElementById("grip-first"),
     gripSit: document.getElementById("grip-sit"),
+    haloFirst: document.getElementById("halo-first"),
+    haloSit: document.getElementById("halo-sit"),
     note: document.getElementById("note"),
     start: document.getElementById("start"),
     cancel: document.getElementById("cancel"),
@@ -441,8 +471,10 @@
   // per unit on either. The two radii are the two dials.
   const RING_UNITS = 60;
   const DIALS = [
-    { key: "sit",   radius: 90, arc: "arcSit",   grip: "gripSit",   range: "rngSit" },
-    { key: "first", radius: 66, arc: "arcFirst", grip: "gripFirst", range: "rngFirst" },
+    { key: "sit",   radius: 90, arc: "arcSit",   grip: "gripSit",
+      halo: "haloSit",   range: "rngSit" },
+    { key: "first", radius: 66, arc: "arcFirst", grip: "gripFirst",
+      halo: "haloFirst", range: "rngFirst" },
   ];
 
   DIALS.forEach((dial) => {
@@ -464,8 +496,12 @@
     // The grip sits on that leading edge -- it IS the tip of the arc, which is
     // what makes it obvious that dragging it is what sets the duration.
     const angle = (-90 + fraction * 360) * Math.PI / 180;
-    el[dial.grip].setAttribute("cx", String(100 + dial.radius * Math.cos(angle)));
-    el[dial.grip].setAttribute("cy", String(100 + dial.radius * Math.sin(angle)));
+    const x = String(100 + dial.radius * Math.cos(angle));
+    const y = String(100 + dial.radius * Math.sin(angle));
+    el[dial.grip].setAttribute("cx", x);
+    el[dial.grip].setAttribute("cy", y);
+    el[dial.halo].setAttribute("cx", x);
+    el[dial.halo].setAttribute("cy", y);
   }
 
   // ── the bell ────────────────────────────────────────────────────────────
@@ -849,9 +885,11 @@
   function buildPickers() {
     PICKERS.forEach((picker) => {
       syncPicker(picker);
-      el[picker.select].addEventListener("change", () => {
-        el[picker.range].value = el[picker.select].value;
-        renderDials();
+      ["input", "change"].forEach((type) => {
+        el[picker.select].addEventListener(type, () => {
+          el[picker.range].value = el[picker.select].value;
+          renderDials();
+        });
       });
     });
   }
@@ -876,6 +914,13 @@
   // Which ring you grabbed is decided by how far from the centre you touched, so
   // the whole annulus is a target rather than just the eight-pixel grip.
   let dragging = null;
+  const LEARNED_KEY = "two-bells:learned";
+
+  function markLearned() {
+    if (el.sit.classList.contains("learned")) return;
+    el.sit.classList.add("learned");
+    try { localStorage.setItem(LEARNED_KEY, "1"); } catch (_) {}
+  }
 
   function ringPoint(event) {
     const box = el.rings.getBoundingClientRect();
@@ -939,6 +984,7 @@
     window.addEventListener("pointermove", onDragMove);
     window.addEventListener("pointerup", endDrag);
     window.addEventListener("pointercancel", endDrag);
+    markLearned();
     setFromPoint(dial, point);
   });
 
@@ -995,6 +1041,10 @@
     holdScreen();   // a lock is dropped whenever the page is hidden
     tick();         // catch up on anything a throttled frame loop missed
   });
+
+  try {
+    if (localStorage.getItem(LEARNED_KEY)) el.sit.classList.add("learned");
+  } catch (_) {}
 
   buildVoices();
   buildTune();
