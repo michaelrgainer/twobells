@@ -253,8 +253,11 @@
   .handle-settle { fill: var(--ring-soft); }
 
   /* Once the first bell has rung the settle ring has nothing left to say, so it
-     goes rather than sitting there empty. */
-  .track-settle, .arc-settle { transition: opacity 900ms ease; }
+     goes rather than sitting there empty. Five seconds, linear: it begins on the
+     bell and dissolves evenly, which is worth watching the first few times and
+     invisible thereafter, by which point nobody is looking at the screen.
+     (prefers-reduced-motion collapses every transition here to 1ms.) */
+  .track-settle, .arc-settle { transition: opacity 5s linear; }
   .sit[data-phase="sitting"] .track-settle,
   .sit[data-phase="sitting"] .arc-settle { opacity: 0; }
 
