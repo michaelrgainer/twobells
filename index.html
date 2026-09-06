@@ -53,6 +53,11 @@
   }
 
   .sit {
+    /* Everything that leaves when the first bell rings leaves over the length of
+       that bell. Set from JS to the voice's own decay, so the page empties at the
+       speed of the sound rather than at a speed someone picked. */
+    --bell-fade: 700ms;
+
     /* An app surface, not a document. Dragging a ring on a desktop otherwise
        starts a text selection and hauls the legend around with the pointer. */
     -webkit-user-select: none;
@@ -78,7 +83,7 @@
   .voices {
     display: flex;
     gap: 8px;
-    transition: opacity 700ms ease;
+    transition: opacity var(--bell-fade) ease;
   }
 
   .voice {
@@ -162,7 +167,7 @@
     letter-spacing: 0.14em;
     text-transform: uppercase;
     color: var(--muted);
-    transition: opacity 700ms ease;
+    transition: opacity var(--bell-fade) ease;
   }
 
   /* Anchored on the number rather than a native <select>: Android Chrome renders
@@ -340,12 +345,10 @@
   .handle-meditate { fill: var(--ring); }
   .handle-settle { fill: var(--ring-soft); }
 
-  /* Once the first bell has rung the settle ring has nothing left to say, so it
-     goes rather than sitting there empty. The duration here is only a fallback:
-     it is set from JS to the bell's own decay, so the ring and the sound die
-     together. (prefers-reduced-motion still collapses it -- an !important in a
-     stylesheet beats an inline declaration.) */
-  .track-settle, .arc-settle { transition: opacity 5s linear; }
+  /* Gone the instant the bell rings, not faded: by then the settle ring has counted
+     itself down to a stub, and dissolving a stub over eight seconds is an effect
+     with nothing left to apply it to. The fadeables fade; this one just stops. */
+  .track-settle, .arc-settle { transition: none; }
   .sit[data-phase="sitting"] .track-settle,
   .sit[data-phase="sitting"] .arc-settle { opacity: 0; }
 
@@ -431,7 +434,7 @@
   .btn[hidden] { display: none; }
 
   .log {
-    transition: opacity 700ms ease;
+    transition: opacity var(--bell-fade) ease;
     font-family: var(--display);
     font-size: 24px;
     font-weight: 400;
@@ -475,7 +478,7 @@
     justify-content: center;
     align-items: center;
     gap: 8px 20px;
-    transition: opacity 700ms ease;
+    transition: opacity var(--bell-fade) ease;
   }
 
   #prune[hidden], #contact[hidden], #copy[hidden] { display: none; }
@@ -508,13 +511,20 @@
   /* Once a sit is running, nothing else on the page can do anything, so nothing
      else on the page is there. All the way to zero rather than dimmed: a ghost of
      a control still reads as something you might be able to use. */
-  /* The wordmark stays. It is not a control, so it is not one of the things that
-     goes quiet when nothing on the page can be pressed -- and a black rectangle
-     with one ring on it reads better as something with a name at the top. */
+  /* Inert from the moment Begin is pressed, but still visible: the page empties on
+     the first bell, not before it. The wordmark and End Now stay throughout -- one
+     is not a control, and the other is the only one left that does anything. */
   .sit:not([data-phase="idle"]) .legend,
   .sit:not([data-phase="idle"]) .tune,
   .sit:not([data-phase="idle"]) .voices,
-  .sit:not([data-phase="idle"]) .log { opacity: 0; pointer-events: none; }
+  .sit:not([data-phase="idle"]) .log,
+  .sit:not([data-phase="idle"]) .log-tools { pointer-events: none; }
+
+  .sit[data-phase="sitting"] .legend,
+  .sit[data-phase="sitting"] .tune,
+  .sit[data-phase="sitting"] .voices,
+  .sit[data-phase="sitting"] .log,
+  .sit[data-phase="sitting"] .log-tools { opacity: 0; }
 
   :focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
 
@@ -585,7 +595,7 @@
 
   <div class="controls">
     <button class="btn" id="start">Begin</button>
-    <button class="btn btn-cancel" id="cancel" hidden>End early</button>
+    <button class="btn btn-cancel" id="cancel" hidden>End Now</button>
   </div>
 
   <div class="log-tools">
@@ -661,9 +671,10 @@
     el[dial.arc].style.strokeDasharray = String(dial.circumference);
   });
 
-  function setSettleFade(duration) {
-    el.arcFirst.style.transitionDuration = duration;
-    el.trackSettle.style.transitionDuration = duration;
+  // One property drives every element that leaves with the bell, so they cannot
+  // end up on different clocks.
+  function setBellFade(duration) {
+    el.sit.style.setProperty("--bell-fade", duration);
   }
 
   function paintDial(dial, units) {
@@ -1338,9 +1349,9 @@
     if (!session.rang && now >= session.bellAt) {
       session.rang = true;
       strike();
-      // The ring goes out with the bell: the fundamental rings for exactly
-      // voice.decay seconds, so that is how long the settle ring takes to fade.
-      setSettleFade(voice.decay + "s");
+      // The page empties over the bell: the fundamental rings for exactly
+      // voice.decay seconds, so that is how long the fade takes.
+      setBellFade(voice.decay + "s");
       el.sit.dataset.phase = "sitting";
       el.note.textContent = "";
     }
@@ -1395,7 +1406,7 @@
     el.note.innerHTML = outcome === "complete" ? "Sit complete" : "Settle<br>then begin";
     el.start.hidden = false;
     el.cancel.hidden = true;
-    setSettleFade("600ms");
+    setBellFade("600ms");
     renderDials();
 
     if (worthKeeping) {
