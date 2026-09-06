@@ -68,7 +68,7 @@
 
   .wordmark {
     font-family: var(--display);
-    font-size: 33px;
+    font-size: 40px;
     font-weight: 400;
     letter-spacing: 0.10em;
     color: var(--muted);
@@ -83,7 +83,7 @@
 
   .voice {
     font-family: var(--ui);
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 500;
     letter-spacing: 0.10em;
     text-transform: uppercase;
@@ -123,7 +123,7 @@
 
   .timbre {
     font-family: var(--ui);
-    font-size: 13px;
+    font-size: 15px;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     padding: 10px 14px;
@@ -143,7 +143,7 @@
   .tune-row .slider { grid-column: 1 / -1; }
 
   .tune-value {
-    font-size: 17px;
+    font-size: 18px;
     font-variant-numeric: tabular-nums;
     color: var(--text);
   }
@@ -157,7 +157,7 @@
     flex-wrap: wrap;
     justify-content: center;
     gap: 10px 20px;
-    font-size: 14px;
+    font-size: 17px;
     font-weight: 500;
     letter-spacing: 0.14em;
     text-transform: uppercase;
@@ -181,7 +181,7 @@
     margin-left: 6px;
     font-family: inherit;
     font-weight: 400;
-    font-size: 24px;
+    font-size: 18px;
     letter-spacing: 0;
     text-transform: none;
     font-variant-numeric: tabular-nums;
@@ -198,7 +198,7 @@
     top: 50%;
     transform: translate(-50%, -50%);
     z-index: 5;
-    width: 104px;
+    width: 124px;
     height: 220px;
     border-radius: 14px;
     border: 1px solid var(--ring-dim);
@@ -225,7 +225,7 @@
     height: 44px;
     line-height: 44px;
     text-align: center;
-    font-size: 21px;
+    font-size: 20px;
     font-variant-numeric: tabular-nums;
     color: var(--muted);
     scroll-snap-align: center;
@@ -252,7 +252,7 @@
   .picker.can-down .fade-bottom { opacity: 1; }
 
   .dial-label {
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 500;
     letter-spacing: 0.14em;
     text-transform: uppercase;
@@ -394,7 +394,7 @@
     font-family: var(--display);
     font-style: italic;
     font-weight: 400;
-    font-size: 26px;
+    font-size: 28px;
     line-height: 1.4;
     color: var(--muted);
     transition: opacity 600ms ease;
@@ -406,7 +406,7 @@
 
   .btn {
     font-family: var(--ui);
-    font-size: 16px;
+    font-size: 18px;
     font-weight: 500;
     letter-spacing: 0.12em;
     text-transform: uppercase;
@@ -429,7 +429,7 @@
   .log {
     transition: opacity 700ms ease;
     font-family: var(--display);
-    font-size: 22px;
+    font-size: 24px;
     font-weight: 400;
     color: var(--muted);
     text-align: center;
@@ -944,10 +944,10 @@
   const ITEM_HEIGHT = 44;
   const PICKERS = [
     { button: "pickFirst", panel: "pickerFirst", list: "listFirst",
-      range: "rngFirst", unit: "s",
+      range: "rngFirst", unit: " sec",
       grid: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55] },
     { button: "pickSit", panel: "pickerSit", list: "listSit",
-      range: "rngSit", unit: "min",
+      range: "rngSit", unit: " min",
       grid: [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60] },
   ];
 
