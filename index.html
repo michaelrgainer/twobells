@@ -703,10 +703,10 @@
   // what a struck STRING produces. That is why they read as piano. What is left is
   // inharmonic, which is what struck metal does, and Custom stays in that territory.
   const PRESETS = [
-    { id: "bowl",  label: "Bowl",  first: 210, close: 150, decay: 8.0,
+    { id: "bowl",  label: "Bowl",  first: 210, decay: 8.0,
       damping: 0.95, detune: 0.0035, strike: 0.20, bright: 1,
       partials: [[1, 0.50], [2.68, 0.20], [5.15, 0.09], [8.40, 0.04]] },
-    { id: "chime", label: "Chime", first: 440, close: 330, decay: 6.0,
+    { id: "chime", label: "Chime", first: 440, decay: 6.0,
       damping: 1.05, detune: 0.0012, strike: 0.26, bright: 1,
       partials: [[1, 0.38], [2.76, 0.16], [5.40, 0.07], [8.93, 0.03]] },
   ];
@@ -762,7 +762,6 @@
     return {
       id: "custom", label: "Custom",
       first: custom.pitch,
-      close: Math.round(custom.pitch * 0.71),   // a fifth down, as the presets are
       decay: custom.ring,
       // The body sets the relative decay rates; Brightness leans on them.
       damping: body.damping - b * 0.35,
@@ -794,11 +793,15 @@
     return buffer;
   }
 
-  function strike(which) {
+  // No argument, deliberately. Opening and closing are the same strike of the same
+  // bell -- a lower, longer closing bell was a flourish that made the end of a sit
+  // sound like a different instrument from the one that was chosen. Taking the
+  // parameter away is what stops the two drifting apart again.
+  function strike() {
     if (!audio) return;
     const now = audio.currentTime;
-    const root = which === "close" ? voice.close : voice.first;
-    const length = which === "close" ? voice.decay * 1.4 : voice.decay;
+    const root = voice.first;
+    const length = voice.decay;
 
     // A brightness envelope over the whole strike. The top end belongs to the
     // moment of impact, not to the ring that follows it.
@@ -890,7 +893,7 @@
     applyVoice(id);
     if (id === "custom") openPanel(); else closePanel();
     unlockAudio();
-    strike("first");
+    strike();
   }
 
   function buildVoices() {
@@ -947,7 +950,7 @@
         try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom)); } catch (_) {}
         keepPanelOpen();
         unlockAudio();
-        strike("first");
+        strike();
       });
       picker.appendChild(button);
     });
@@ -994,7 +997,7 @@
       range.addEventListener("change", () => {
         keepPanelOpen();
         unlockAudio();
-        strike("first");
+        strike();
       });
 
       row.append(label, value, range);
@@ -1300,7 +1303,7 @@
 
     if (!session.rang && now >= session.bellAt) {
       session.rang = true;
-      strike("first");
+      strike();
       // The ring goes out with the bell: the fundamental rings for exactly
       // voice.decay seconds, so that is how long the settle ring takes to fade.
       setSettleFade(voice.decay + "s");
@@ -1309,7 +1312,7 @@
     }
 
     if (now >= session.endAt) {
-      strike("close");
+      strike();
       finish("complete");
       return;
     }
