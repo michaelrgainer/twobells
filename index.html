@@ -53,6 +53,10 @@
   }
 
   .sit {
+    /* An app surface, not a document. Dragging a ring on a desktop otherwise
+       starts a text selection and hauls the legend around with the pointer. */
+    -webkit-user-select: none;
+    user-select: none;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -817,6 +821,10 @@
   }
 
   el.rings.addEventListener("pointerdown", (event) => {
+    // Suppressed before anything else, and whether or not a ring was hit: a
+    // mouse-down that falls in the hole or between the rings would otherwise
+    // begin a native text-selection drag.
+    event.preventDefault();
     if (session) return;                       // durations are fixed once running
     const point = ringPoint(event);
     const dial = nearestDial(point);
@@ -824,7 +832,6 @@
     dragging = dial;
     el.rings.setPointerCapture(event.pointerId);
     setFromPoint(dial, point);
-    event.preventDefault();
   });
 
   el.rings.addEventListener("pointermove", (event) => {
