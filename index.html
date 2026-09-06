@@ -97,6 +97,28 @@
     border-color: var(--ring-dim);
   }
 
+  .tune {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    width: 100%;
+    padding: 18px 16px;
+    border: 1px solid var(--hairline);
+    border-radius: 14px;
+  }
+
+  .tune[hidden] { display: none; }
+
+  .tune-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; }
+
+  .tune-row .slider { grid-column: 1 / -1; }
+
+  .tune-value {
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+  }
+
   /* ── the dials ─────────────────────────────────────────────────────────── */
 
   .dials {
@@ -267,6 +289,8 @@
 
   .sit[data-phase="waiting"] .dials,
   .sit[data-phase="sitting"] .dials,
+  .sit[data-phase="waiting"] .tune,
+  .sit[data-phase="sitting"] .tune,
   .sit[data-phase="waiting"] .voices,
   .sit[data-phase="sitting"] .voices,
   .sit[data-phase="waiting"] .wordmark,
@@ -283,6 +307,8 @@
   <div class="wordmark">Two Bells</div>
 
   <div class="voices" id="voices" role="group" aria-label="Bell sound"></div>
+
+  <div class="tune" id="tune" hidden></div>
 
   <div class="dials" id="dials">
     <div class="dial">
@@ -335,6 +361,7 @@
     cancel: document.getElementById("cancel"),
     log: document.getElementById("log"),
     voices: document.getElementById("voices"),
+    tune: document.getElementById("tune"),
     rngFirst: document.getElementById("rng-first"),
     rngSit: document.getElementById("rng-sit"),
     valFirst: document.getElementById("val-first"),
@@ -363,25 +390,62 @@
   // Four voices, each a set of partials over a decay. What separates them is
   // inharmonicity and length: a bowl's partials sit at unmusical ratios and ring
   // for six seconds; a glass bell is near-harmonic, high, and gone in two.
-  const VOICES = [
-    // `damping` sets how much faster high partials die than low ones, which is the
-    // single thing that separates a bell from a clang: equal decay holds the whole
-    // inharmonic cluster sounding at once. `detune` is the spread between a bell's
-    // paired modes -- real ones are never quite symmetric, and the slow beating
-    // between the pair is what reads as metal rather than as an oscillator.
+  // Both dropped voices had partials at 1, 2, 3, 4 -- a harmonic series, which is
+  // what a struck STRING produces. That is why they read as piano. What is left is
+  // inharmonic, which is what struck metal does, and Custom stays in that territory.
+  const PRESETS = [
     { id: "bowl",  label: "Bowl",  first: 210, close: 150, decay: 8.0,
-      damping: 0.95, detune: 0.0035, strike: 0.20,
+      damping: 0.95, detune: 0.0035, strike: 0.20, bright: 1,
       partials: [[1, 0.50], [2.68, 0.20], [5.15, 0.09], [8.40, 0.04]] },
-    { id: "bell",  label: "Bell",  first: 523, close: 349, decay: 5.0,
-      damping: 1.15, detune: 0.0020, strike: 0.32,
-      partials: [[0.5, 0.28], [1, 0.40], [2.00, 0.15], [3.01, 0.08], [4.17, 0.04]] },
     { id: "chime", label: "Chime", first: 440, close: 330, decay: 6.0,
-      damping: 1.05, detune: 0.0012, strike: 0.26,
+      damping: 1.05, detune: 0.0012, strike: 0.26, bright: 1,
       partials: [[1, 0.38], [2.76, 0.16], [5.40, 0.07], [8.93, 0.03]] },
-    { id: "glass", label: "Glass", first: 784, close: 587, decay: 3.6,
-      damping: 1.35, detune: 0.0015, strike: 0.38,
-      partials: [[1, 0.30], [2.00, 0.13], [3.00, 0.07], [4.00, 0.03]] },
   ];
+
+  // Four macros, each moving several parameters together. Sliders on the raw
+  // partial ratios would be a synth toy: most of that space is atonal, and none
+  // of it is what anyone wants at the start of a sit.
+  const MACROS = [
+    { key: "pitch",   label: "Pitch",      min: 110, max: 660, step: 5,   unit: "Hz" },
+    { key: "ring",    label: "Ring",       min: 2,   max: 14,  step: 0.5, unit: "s" },
+    { key: "bright",  label: "Brightness", min: 0,   max: 100, step: 1,   unit: "" },
+    { key: "shimmer", label: "Shimmer",    min: 0,   max: 100, step: 1,   unit: "" },
+    { key: "metallic", label: "Metallic",   min: 0,   max: 100, step: 1,   unit: "" },
+  ];
+
+  // Metallic is inharmonicity, which is the whole difference between the two
+  // families: a struck string rings at whole-number multiples of its fundamental,
+  // a struck bell does not. At 0 the partials land on 2, 3, 4 and it reads as a
+  // piano; at 100 they land where a bowl's actually sit.
+  const HARMONIC = [2, 3, 4];
+  const INHARMONIC = [2.68, 5.15, 8.40];
+
+  const CUSTOM_KEY = "two-bells:custom";
+  let custom = { pitch: 210, ring: 8, bright: 50, shimmer: 35, metallic: 100 };
+
+  function customVoice() {
+    const b = custom.bright / 100;
+    const m = custom.metallic / 100;
+    const ratio = (i) => HARMONIC[i] + m * (INHARMONIC[i] - HARMONIC[i]);
+    return {
+      id: "custom", label: "Custom",
+      first: custom.pitch,
+      close: Math.round(custom.pitch * 0.71),   // a fifth down, as the presets are
+      decay: custom.ring,
+      damping: 1.25 - b * 0.45,                 // brighter lets the uppers live longer
+      detune: (custom.shimmer / 100) * 0.006,
+      strike: 0.14 + b * 0.30,
+      bright: 0.55 + b * 0.9,
+      partials: [
+        [1,          0.50],
+        [ratio(0),   0.10 + b * 0.20],
+        [ratio(1),   0.03 + b * 0.12],
+        [ratio(2),   0.01 + b * 0.07],
+      ],
+    };
+  }
+
+  const VOICES = PRESETS.concat([customVoice()]);
 
   const VOICE_KEY = "two-bells:voice";
   let voice = VOICES[0];
@@ -410,8 +474,8 @@
     const tone = audio.createBiquadFilter();
     tone.type = "lowpass";
     tone.Q.value = 0.7;
-    tone.frequency.setValueAtTime(root * 14, now);
-    tone.frequency.exponentialRampToValueAtTime(root * 2.6, now + 1.1);
+    tone.frequency.setValueAtTime(root * 14 * voice.bright, now);
+    tone.frequency.exponentialRampToValueAtTime(root * 2.6 * voice.bright, now + 1.1);
     bus.connect(tone).connect(audio.destination);
 
     voice.partials.forEach(([ratio, level], index) => {
@@ -451,31 +515,88 @@
     hit.stop(now + 0.25);
   }
 
-  function chooseVoice(next, preview) {
-    voice = next;
-    try { localStorage.setItem(VOICE_KEY, next.id); } catch (_) {}
-    el.voices.querySelectorAll(".voice").forEach((b) => {
-      b.setAttribute("aria-pressed", String(b.dataset.voice === next.id));
+  // Two concerns kept apart: applying a voice, and the gesture of picking one.
+  // Restoring a saved choice on load must not fling the tuning panel open.
+  function applyVoice(id) {
+    voice = id === "custom" ? customVoice()
+                            : (PRESETS.find((v) => v.id === id) || PRESETS[0]);
+    try { localStorage.setItem(VOICE_KEY, voice.id); } catch (_) {}
+    el.voices.querySelectorAll(".voice").forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.dataset.voice === voice.id));
     });
-    if (preview) { unlockAudio(); strike("first"); }
+  }
+
+  function chooseVoice(id) {
+    applyVoice(id);
+    el.tune.hidden = id !== "custom";
+    unlockAudio();
+    strike("first");
   }
 
   function buildVoices() {
-    try {
-      const saved = localStorage.getItem(VOICE_KEY);
-      const match = VOICES.find((v) => v.id === saved);
-      if (match) voice = match;
-    } catch (_) {}
-
     VOICES.forEach((v) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "voice";
       button.dataset.voice = v.id;
       button.textContent = v.label;
-      button.setAttribute("aria-pressed", String(v.id === voice.id));
-      button.addEventListener("click", () => chooseVoice(v, true));
+      button.setAttribute("aria-pressed", "false");
+      button.addEventListener("click", () => chooseVoice(v.id));
       el.voices.appendChild(button);
+    });
+
+    try {
+      const saved = JSON.parse(localStorage.getItem(CUSTOM_KEY) || "null");
+      if (saved) custom = Object.assign(custom, saved);
+    } catch (_) {}
+
+    let start = PRESETS[0].id;
+    try {
+      const savedId = localStorage.getItem(VOICE_KEY);
+      if (VOICES.some((v) => v.id === savedId)) start = savedId;
+    } catch (_) {}
+    applyVoice(start);
+  }
+
+  function buildTune() {
+    MACROS.forEach((macro) => {
+      const row = document.createElement("div");
+      row.className = "tune-row";
+
+      const label = document.createElement("span");
+      label.className = "dial-label";
+      label.textContent = macro.label;
+
+      const value = document.createElement("span");
+      value.className = "tune-value";
+
+      const range = document.createElement("input");
+      range.className = "slider";
+      range.type = "range";
+      range.min = String(macro.min);
+      range.max = String(macro.max);
+      range.step = String(macro.step);
+      range.value = String(custom[macro.key]);
+      range.setAttribute("aria-label", macro.label);
+
+      const show = () => {
+        value.textContent = custom[macro.key] + (macro.unit ? " " + macro.unit : "");
+      };
+      show();
+
+      range.addEventListener("input", () => {
+        custom[macro.key] = Number(range.value);
+        show();
+        voice = customVoice();
+        try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom)); } catch (_) {}
+      });
+
+      // Struck on release, not on every step of the drag: `input` fires per pixel
+      // and would stack a hundred overlapping bells.
+      range.addEventListener("change", () => { unlockAudio(); strike("first"); });
+
+      row.append(label, value, range);
+      el.tune.appendChild(row);
     });
   }
 
@@ -545,6 +666,7 @@
     el.note.textContent = first > 0 ? "Settling" : "";
     el.start.hidden = true;
     el.cancel.hidden = false;
+    el.tune.hidden = true;
 
     // Absolute deadlines, not accumulated intervals, so a throttled frame loop
     // cannot make the sit drift longer than it was set for.
@@ -672,6 +794,7 @@
   });
 
   buildVoices();
+  buildTune();
   renderDials();
   loadLocal();
 
