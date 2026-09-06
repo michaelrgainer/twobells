@@ -522,6 +522,15 @@
   </div>
 
   <div class="log" id="log" aria-live="polite">No sits recorded yet</div>
+
+  <span class="pick-wrap" id="prune" hidden>
+    <button type="button" class="prune" id="pick-keep" aria-haspopup="listbox"
+            aria-expanded="false">Keep last&hellip;</button>
+    <div class="picker" id="picker-keep" hidden>
+      <div class="picker-list" id="list-keep" role="listbox"></div>
+      <div class="fade fade-top"></div><div class="fade fade-bottom"></div>
+    </div>
+  </span>
 </main>
 
 <script>
@@ -552,6 +561,10 @@
     pickerSit: document.getElementById("picker-sit"),
     listFirst: document.getElementById("list-first"),
     listSit: document.getElementById("list-sit"),
+    prune: document.getElementById("prune"),
+    pickKeep: document.getElementById("pick-keep"),
+    pickerKeep: document.getElementById("picker-keep"),
+    listKeep: document.getElementById("list-keep"),
   };
 
   // Sixty units fill a ring, whether they are seconds of settling or minutes of
@@ -944,17 +957,30 @@
   const ITEM_HEIGHT = 44;
   const PICKERS = [
     { button: "pickFirst", panel: "pickerFirst", list: "listFirst",
-      range: "rngFirst", unit: " sec",
-      grid: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55] },
+      grid: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55],
+      label: (v) => v + " sec",
+      get: () => Number(el.rngFirst.value),
+      set: (v) => { el.rngFirst.value = String(v); renderDials(); } },
     { button: "pickSit", panel: "pickerSit", list: "listSit",
-      range: "rngSit", unit: " min",
-      grid: [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60] },
+      grid: [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60],
+      label: (v) => v + " min",
+      get: () => Number(el.rngSit.value),
+      set: (v) => { el.rngSit.value = String(v); renderDials(); } },
+    { button: "pickKeep", panel: "pickerKeep", list: "listKeep",
+      grid: [5, 10, 20, 50, 100],
+      label: (v) => "keep " + v,
+      get: () => history.length,
+      // Only counts that would actually discard something. Offering "keep 20" for
+      // a log of nine is a menu of things that do nothing.
+      values: () => [1, 3, 5, 10, 20, 50, 100].filter((n) => n < history.length),
+      set: (v) => armPrune(v) },
   ];
 
   let openPicker = null;
 
   function pickerValues(picker) {
-    const value = Number(el[picker.range].value);
+    if (picker.values) return picker.values();
+    const value = picker.get();
     // A ring drag lands on values the grid does not contain; the odd one out is
     // spliced in rather than silently rounded away.
     return picker.grid.includes(value)
@@ -978,9 +1004,8 @@
   }
 
   function choose(picker, value) {
-    el[picker.range].value = String(value);
     closePicker();
-    renderDials();
+    picker.set(value);
   }
 
   function showPicker(picker) {
@@ -990,14 +1015,14 @@
 
     const list = el[picker.list];
     const values = pickerValues(picker);
-    const current = Number(el[picker.range].value);
+    const current = picker.get();
     list.textContent = "";
     values.forEach((value) => {
       const item = document.createElement("div");
       item.className = "picker-item";
       item.setAttribute("role", "option");
       item.setAttribute("aria-selected", String(value === current));
-      item.textContent = value + picker.unit;
+      item.textContent = picker.label(value);
       item.addEventListener("click", () => choose(picker, value));
       list.appendChild(item);
     });
@@ -1015,13 +1040,14 @@
     PICKERS.forEach((picker) => {
       el[picker.button].addEventListener("click", (event) => {
         event.stopPropagation();
+        if (picker.button === "pickKeep" && pendingKeep !== null) return doPrune();
         showPicker(picker);
       });
       el[picker.list].addEventListener("scroll", () => updateFades(picker));
       el[picker.panel].addEventListener("click", (event) => event.stopPropagation());
     });
 
-    document.addEventListener("click", closePicker);
+    document.addEventListener("click", () => { closePicker(); cancelPrune(); });
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape" || !openPicker) return;
       const button = el[openPicker.button];
@@ -1032,8 +1058,8 @@
 
   function renderDials() {
     const { first, sit } = settings();
-    PICKERS.forEach((picker) => {
-      el[picker.button].textContent = el[picker.range].value + picker.unit;
+    PICKERS.slice(0, 2).forEach((picker) => {
+      el[picker.button].textContent = picker.label(picker.get());
     });
     // The button names what pressing it actually starts. With settling time on the
     // clock the first thing that happens is settling, not the sit.
@@ -1276,10 +1302,14 @@
   let store = null;
   let history = [];
 
-  function save(record) {
+  function persistLocal() {
     try {
       localStorage.setItem(KEY, JSON.stringify(history.slice(0, KEEP)));
     } catch (_) {}
+  }
+
+  function save(record) {
+    persistLocal();
     if (store) {
       store.doc("sits/" + record.at.replace(/[:.]/g, "-"))
            .set(record).catch(() => {});
@@ -1304,7 +1334,50 @@
            " of " + record.sit + " min</em>";
   }
 
+  // Six or more before the housekeeping appears: below that, scrolling past the
+  // whole log is less work than pruning it.
+  const PRUNE_FROM = 6;
+  let pendingKeep = null;
+
+  function armPrune(keep) {
+    pendingKeep = keep < history.length ? keep : null;
+    renderLog();
+  }
+
+  function cancelPrune() {
+    if (pendingKeep === null) return;
+    pendingKeep = null;
+    renderLog();
+  }
+
+  function doPrune() {
+    const removed = history.slice(pendingKeep);
+    history = history.slice(0, pendingKeep);
+    pendingKeep = null;
+    persistLocal();
+    // Out of the shared store too, or they return on the next device that syncs.
+    if (store) {
+      removed.forEach((record) => {
+        store.doc("sits/" + record.at.replace(/[:.]/g, "-")).delete().catch(() => {});
+      });
+    }
+    renderLog();
+  }
+
+  function renderPruneControl() {
+    el.prune.hidden = history.length < PRUNE_FROM;
+    if (pendingKeep === null) {
+      el.pickKeep.textContent = "Keep last\u2026";
+      el.pickKeep.classList.remove("armed");
+      return;
+    }
+    const going = history.length - pendingKeep;
+    el.pickKeep.textContent = "Discard " + going + " older \u2014 tap to confirm";
+    el.pickKeep.classList.add("armed");
+  }
+
   function renderLog() {
+    renderPruneControl();
     if (!history.length) {
       el.log.innerHTML = "No sits recorded yet";
       return;
@@ -1313,10 +1386,15 @@
     // browser's copy, and a record just unshifted on all agree today, and a render
     // that depends on all three continuing to agree is one that will eventually
     // show someone their practice backwards.
+    // Sorted in place, so the array's order is the order on screen -- which is
+    // what makes "keep the first N" mean "keep the newest N" rather than
+    // whichever N happened to be stored first.
+    history.sort((a, b) => String(b.at).localeCompare(String(a.at)));
     el.log.innerHTML = history
-      .slice()
-      .sort((a, b) => String(b.at).localeCompare(String(a.at)))
-      .map((record) => "<div class=\"sit-row\">" + describe(record) + "</div>")
+      .map((record, i) => {
+        const doomed = pendingKeep !== null && i >= pendingKeep ? " doomed" : "";
+        return "<div class=\"sit-row" + doomed + "\">" + describe(record) + "</div>";
+      })
       .join("");
   }
 
