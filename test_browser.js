@@ -225,37 +225,44 @@ test("the two switches on the custom bell", SUITE, async (t) => {
       .find((r) => r.querySelector(".dial-label").textContent === label);
   `;
 
-  await t.test("Silent sits above And vibrate", () => {
+  await t.test("Silent is offered, and this browser is not offered vibration", () => {
+    // A headless Chrome is a laptop: navigator.vibrate exists and moves nothing,
+    // so the row must not be there. Which device gets which row is settled in
+    // test_logic.js, where the pointer type can be chosen.
     const seen = run(OPEN_PANEL + `
       return Array.from(document.querySelectorAll(".tune .tune-row"))
                   .map((r) => r.querySelector(".dial-label").textContent);
     `);
-    assert.ok(seen.indexOf("Silent") < seen.indexOf("And vibrate"),
-              seen.join(" | "));
+    assert.ok(seen.includes("Silent"), seen.join(" | "));
+    assert.ok(!seen.includes("And vibrate"), seen.join(" | "));
   });
 
-  for (const [label, key] of [["Silent", "silent"], ["And vibrate", "vibrate"]]) {
-    await t.test(`${label} flips and is remembered`, () => {
-      const seen = run(OPEN_PANEL + `
-        const row = rowFor(${JSON.stringify(label)});
-        if (!row) throw new Error("no " + ${JSON.stringify(label)} + " row");
-        const button = row.querySelector(".timbre");
-        const before = [button.getAttribute("aria-pressed"), button.textContent];
-        button.click();
-        await wait(80);
-        return { before, after: [button.getAttribute("aria-pressed"), button.textContent],
-                 stored: JSON.parse(localStorage.getItem("two-bells:custom"))[${JSON.stringify(key)}] };
-      `);
-      assert.deepEqual(seen.before, ["false", "Off"]);
-      assert.deepEqual(seen.after, ["true", "On"]);
-      assert.equal(seen.stored, true);
-    });
-  }
+  await t.test("Silent's knob slides, and the setting is remembered", () => {
+    const label = "Silent", key = "silent";
+    const seen = run(OPEN_PANEL + `
+      const row = rowFor("Silent");
+      if (!row) throw new Error("no Silent row");
+      const button = row.querySelector(".switch");
+      const knob = () => getComputedStyle(button, "::after").transform;
+      const before = [button.getAttribute("aria-pressed"), knob()];
+      button.click();
+      await wait(300);
+      return { before, after: [button.getAttribute("aria-pressed"), knob()],
+               label: button.getAttribute("aria-label"),
+               stored: JSON.parse(localStorage.getItem("two-bells:custom")).silent };
+    `);
+    assert.equal(seen.before[0], "false");
+    assert.equal(seen.after[0], "true");
+    // The knob has actually travelled, not merely changed colour.
+    assert.notEqual(seen.after[1], seen.before[1]);
+    assert.equal(seen.label, label);
+    assert.equal(seen.stored, true);
+  });
 
   await t.test("a silent bell still empties the page and still ends the sit", () => {
     // Silent means no sound, not no bell: the fade and the record are unchanged.
     const seen = run(OPEN_PANEL + `
-      rowFor("Silent").querySelector(".timbre").click();
+      rowFor("Silent").querySelector(".switch").click();
       await wait(80);
       setDurations(0, 20);
       $("start").click();
@@ -295,6 +302,51 @@ test("more cowbell", SUITE, async (t) => {
       return ${bodies};
     `);
     assert.ok(!seen.includes("Cowbell"), seen.join(", "));
+  });
+
+  await t.test("and it insists on being short and still", () => {
+    // A cowbell that rings for ten seconds is a different instrument and not a
+    // funny one, so picking the body drags Ring and Shimmer with it.
+    const seen = run(`
+      const wm = document.querySelector(".wordmark");
+      for (let i = 0; i < 5; i++) { wm.click(); await wait(30); }
+      await wait(250);
+      const sliderFor = (label) => Array.from(document.querySelectorAll(".tune .tune-row"))
+        .find((r) => r.querySelector(".dial-label").textContent === label)
+        .querySelector(".slider").value;
+      const pinned = { ring: sliderFor("Ring"), shimmer: sliderFor("Shimmer"),
+                       bright: sliderFor("Brightness") };
+
+      // Back to a body that pins nothing, then to the cowbell again by hand.
+      document.querySelector('[data-timbre="church"]').click();
+      await wait(120);
+      const loosened = { ring: sliderFor("Ring"), shimmer: sliderFor("Shimmer") };
+      document.querySelector('[data-timbre="church"]').parentElement
+              .querySelector('[data-timbre="cowbell"]').click();
+      await wait(120);
+      return { pinned, loosened, again: { ring: sliderFor("Ring"), shimmer: sliderFor("Shimmer"),
+                                          bright: sliderFor("Brightness") },
+               stored: JSON.parse(localStorage.getItem("two-bells:custom")) };
+    `);
+    assert.deepEqual(seen.pinned, { ring: "0.5", shimmer: "0", bright: "0" });
+    assert.deepEqual(seen.again, { ring: "0.5", shimmer: "0", bright: "0" });
+    assert.equal(seen.stored.ring, 0.5);
+    assert.equal(seen.stored.shimmer, 0);
+    assert.equal(seen.stored.bright, 0);
+  });
+
+  await t.test("and the fade follows it, so the page snaps back", () => {
+    const seen = run(`
+      const wm = document.querySelector(".wordmark");
+      for (let i = 0; i < 5; i++) { wm.click(); await wait(30); }
+      await wait(250);
+      setDurations(0, 20);
+      $("start").click();
+      seam.hurry({ bellIn: 0, endIn: 60000 });
+      await wait(150);
+      return getComputedStyle($("sit")).getPropertyValue("--bell-fade").trim();
+    `);
+    assert.equal(seen, "0.5s");
   });
 
   await t.test("but five taps finds it, and it stays found", () => {

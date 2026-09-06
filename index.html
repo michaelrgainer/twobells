@@ -153,6 +153,40 @@
   .timbre:hover { color: var(--text); border-color: var(--ring-dim); }
   .timbre[aria-pressed="true"] { color: var(--ring); border-color: var(--ring-dim); }
 
+  /* A switch, not a word. On and Off have to be read and then interpreted; a
+     knob that has moved to one end is simply seen. */
+  .switch {
+    position: relative;
+    width: 48px;
+    height: 26px;
+    padding: 0;
+    border-radius: 999px;
+    border: 1px solid var(--hairline);
+    background: var(--track);
+    cursor: pointer;
+    transition: background 160ms ease, border-color 160ms ease;
+  }
+
+  .switch::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: transform 160ms ease, background 160ms ease;
+  }
+
+  .switch:hover { border-color: var(--ring-dim); }
+  .switch[aria-pressed="true"] { background: var(--ring-dim); border-color: var(--ring-dim); }
+  .switch[aria-pressed="true"]::after { transform: translateX(22px); background: var(--ring); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .switch, .switch::after { transition: none; }
+  }
+
   .tune-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; }
 
   .tune-row .slider { grid-column: 1 / -1; }
@@ -754,7 +788,7 @@
   // of it is what anyone wants at the start of a sit.
   const MACROS = [
     { key: "pitch",   label: "Pitch",      min: 110, max: 660, step: 5,   unit: "Hz" },
-    { key: "ring",    label: "Ring",       min: 2,   max: 14,  step: 0.5, unit: "s" },
+    { key: "ring",    label: "Ring",       min: 0.5, max: 14,  step: 0.25, unit: "s" },
     { key: "bright",  label: "Brightness", min: 0,   max: 100, step: 1,   unit: "" },
     { key: "shimmer", label: "Shimmer",    min: 0,   max: 100, step: 1,   unit: "" },
   ];
@@ -792,9 +826,14 @@
     // Not in the list until it is. A cowbell is a bent steel plate, so its
     // partials sit at no sensible ratio at all and it stops almost at once --
     // which is why it is funny here and why it would be unbearable to sit to.
-    { id: "cowbell", label: "Cowbell",   damping: 1.70, hit: 1.7, hitBand: 5.0,
-      hidden: true,
-      partials: [[1, 0.42], [3.10, 0.30], [5.42, 0.20], [7.24, 0.12], [9.90, 0.06]] },
+    // Not in the list until it is. A cowbell is a bent steel plate: its partials
+    // sit at no sensible ratio, it stops almost at once, and most of what reaches
+    // you is the stick rather than the metal -- hence the steep damping, the loud
+    // wide transient, and the ring and shimmer it pins on the way in. Ten seconds
+    // of shimmering cowbell would be a different instrument, and not a funny one.
+    { id: "cowbell", label: "Cowbell",   damping: 2.60, hit: 2.6, hitBand: 4.5,
+      hidden: true, ring: 0.5, bright: 0, shimmer: 0,
+      partials: [[1, 0.30], [3.10, 0.22], [5.42, 0.13], [7.24, 0.07]] },
   ];
 
   const COWBELL_KEY = "two-bells:cowbell";
@@ -808,10 +847,15 @@
   let custom = { pitch: 330, ring: 10, bright: 60, shimmer: 20, timbre: "church",
                  silent: false, vibrate: false };
 
-  // iOS has never implemented this and shows no sign of starting, so the control
-  // is not offered there: a switch that does nothing is worse than no switch.
+  // Desktop Chrome ships navigator.vibrate as a no-op, so the function existing
+  // proves only that someone implemented the spec, not that anything will move.
+  // A coarse primary pointer is the closest honest proxy for a motor being in the
+  // room: a phone or a tablet, not a laptop with a trackpad. iOS has neither the
+  // API nor, therefore, the row, which is the outcome either way.
   const CAN_VIBRATE = typeof navigator !== "undefined" &&
-                      typeof navigator.vibrate === "function";
+                      typeof navigator.vibrate === "function" &&
+                      typeof matchMedia === "function" &&
+                      matchMedia("(pointer: coarse)").matches;
 
   function customVoice() {
     const b = custom.bright / 100;
@@ -1016,8 +1060,12 @@
         picker.querySelectorAll(".timbre").forEach((other) => {
           other.setAttribute("aria-pressed", String(other.dataset.timbre === body.id));
         });
+        // Redrawn only when the body actually moved a slider, so the panel does
+        // not flicker for the six bodies that pin nothing.
+        const moved = adoptBody(body);
         voice = customVoice();
         try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom)); } catch (_) {}
+        if (moved) rebuildTune();
         keepPanelOpen();
         unlockAudio();
         strike();
@@ -1080,6 +1128,22 @@
 
   // Both switches are the same switch: a name on the left and a state on the
   // right, struck afterwards so the change is heard -- or, for Silent, is not.
+  // Some bodies cannot be any length: the slider follows rather than fighting it.
+  function adoptBody(body) {
+    let moved = false;
+    MACROS.forEach(({ key }) => {
+      if (body[key] === undefined || custom[key] === body[key]) return;
+      custom[key] = body[key];
+      moved = true;
+    });
+    return moved;
+  }
+
+  function rebuildTune() {
+    el.tune.textContent = "";
+    buildTune();
+  }
+
   function buildToggleRow(label, key) {
     const row = document.createElement("div");
     row.className = "tune-row";
@@ -1090,13 +1154,13 @@
 
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "timbre";
+    button.className = "switch";
     button.dataset.toggle = key;
+    // The row's own label is the switch's name; the knob carries the state, so
+    // there is no text inside it for a screen reader to find.
+    button.setAttribute("aria-label", label);
 
-    const show = () => {
-      button.setAttribute("aria-pressed", String(!!custom[key]));
-      button.textContent = custom[key] ? "On" : "Off";
-    };
+    const show = () => button.setAttribute("aria-pressed", String(!!custom[key]));
     show();
 
     button.addEventListener("click", () => {
@@ -1128,8 +1192,9 @@
       try { localStorage.setItem(COWBELL_KEY, "1"); } catch (_) {}
       custom.timbre = "cowbell";
       try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom)); } catch (_) {}
-      el.tune.textContent = "";
-      buildTune();
+      adoptBody(TIMBRES.find((body) => body.id === "cowbell"));
+      try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom)); } catch (_) {}
+      rebuildTune();
       el.wordmark.title = "More cowbell.";
       // Straight to it, and struck: an easter egg you have to go and find twice
       // is one nobody finds once.

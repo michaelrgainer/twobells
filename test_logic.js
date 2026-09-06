@@ -170,21 +170,36 @@ test("the running totals", async (t) => {
   });
 });
 
-test("a device with no vibration is not offered it", async (t) => {
-  await t.test("no such row in the tuning panel", () => {
-    // The stub's navigator has no vibrate, which is every iPhone. A switch that
-    // does nothing is worse than no switch.
-    const { nodes } = loadPage();
-    const labels = nodes["tune"].children
-      .map((row) => (row.children[0] || {}).textContent);
-    assert.ok(!labels.includes("And vibrate"), labels.join(", "));
+test("who gets offered vibration", async (t) => {
+  const rows = (opts) => loadPage(opts).nodes["tune"].children
+    .map((row) => (row.children[0] || {}).textContent);
+
+  await t.test("a phone does", () => {
+    assert.ok(rows({ touch: true }).includes("And vibrate"));
   });
 
-  await t.test("and the custom bell does not claim it can", () => {
+  await t.test("a laptop does not, though it has the function", () => {
+    // Desktop Chrome defines navigator.vibrate and it moves nothing. A switch
+    // that does nothing is worse than no switch, so the row is absent.
+    const desktop = { touch: false, storage: undefined };
+    assert.ok(!rows(desktop).includes("And vibrate"), rows(desktop).join(", "));
+  });
+
+  await t.test("and on a phone, Silent comes first", () => {
+    const onPhone = rows({ touch: true });
+    assert.ok(onPhone.indexOf("Silent") < onPhone.indexOf("And vibrate"),
+              onPhone.join(" | "));
+  });
+
+  await t.test("but Silent is offered to everyone", () => {
+    assert.ok(rows({ touch: true }).includes("Silent"));
+    assert.ok(rows({}).includes("Silent"));
+  });
+
+  await t.test("and a laptop will not buzz on a setting carried from a phone", () => {
     const { seam } = loadPage({ seed: {
       "two-bells:custom": JSON.stringify({ vibrate: true }),
       "two-bells:voice": "custom" } });
-    // Stored from a phone that could, opened on a laptop that cannot.
     assert.equal(seam.getState().voice, "custom");
     assert.equal(global.navigator.vibrate, undefined);
   });

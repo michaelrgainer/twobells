@@ -113,7 +113,14 @@ function loadPage(options = {}) {
   };
   global.window = { addEventListener() {}, removeEventListener() {} };
   global.localStorage = storage;
-  global.navigator = {};
+  // `touch: true` is a phone: a vibration motor and a finger as the primary
+  // pointer. Anything else is a laptop, where Chrome still defines navigator
+  // .vibrate and it still does nothing.
+  global.navigator = options.touch ? { vibrate: () => true } : {};
+  global.matchMedia = (query) => ({
+    matches: !!options.touch && /pointer:\s*coarse/.test(query),
+    media: query,
+  });
   global.requestAnimationFrame = () => 0;
   global.cancelAnimationFrame = () => {};
   global.AudioContext = makeAudio();
