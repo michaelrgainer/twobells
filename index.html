@@ -182,8 +182,10 @@
     font-family: inherit;
     font-weight: 400;
     font-size: 18px;
-    letter-spacing: 0;
-    text-transform: none;
+    letter-spacing: 0.02em;
+    /* Inherits the legend's caps rather than overriding them: a lowercase unit
+       beside SETTLE and MEDITATE reads as a different kind of word. */
+    text-transform: uppercase;
     font-variant-numeric: tabular-nums;
     color: inherit;
     cursor: pointer;
@@ -225,6 +227,8 @@
     height: 44px;
     line-height: 44px;
     text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
     font-size: 20px;
     font-variant-numeric: tabular-nums;
     color: var(--muted);
