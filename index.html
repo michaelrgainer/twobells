@@ -988,6 +988,94 @@
     setFromPoint(dial, point);
   });
 
+  function begin() {
+    unlockAudio();
+    holdScreen();
+
+    const { first, sit } = settings();
+    const now = Date.now();
+    session = {
+      first, sit,
+      startedAt: now,
+      bellAt: now + first * 1000,
+      endAt: now + first * 1000 + sit * 60000,
+      rang: false,
+    };
+
+    el.sit.dataset.phase = first > 0 ? "waiting" : "sitting";
+    el.note.textContent = first > 0 ? "Settling" : "";
+    el.start.hidden = true;
+    el.cancel.hidden = false;
+    closePanel();
+
+    // Absolute deadlines, not accumulated intervals, so a throttled frame loop
+    // cannot make the sit drift longer than it was set for.
+    backstops.push(setTimeout(() => tick(), Math.max(0, session.bellAt - now) + 40));
+    backstops.push(setTimeout(() => tick(), Math.max(0, session.endAt - now) + 40));
+    loop();
+  }
+
+  function tick() {
+    if (!session) return;
+    const now = Date.now();
+
+    if (!session.rang && now >= session.bellAt) {
+      session.rang = true;
+      strike("first");
+      // The ring goes out with the bell: the fundamental rings for exactly
+      // voice.decay seconds, so that is how long the settle ring takes to fade.
+      setSettleFade(voice.decay + "s");
+      el.sit.dataset.phase = "sitting";
+      el.note.textContent = "";
+    }
+
+    if (now >= session.endAt) {
+      strike("close");
+      finish("complete");
+      return;
+    }
+
+    if (session.rang) {
+      paintDial(DIALS[1], 0);
+      paintDial(DIALS[0], (session.endAt - now) / 60000);   // minutes left, of sixty
+    } else {
+      paintDial(DIALS[0], session.sit);                     // still to come
+      paintDial(DIALS[1], (session.bellAt - now) / 1000);   // seconds left, of sixty
+    }
+  }
+
+  function loop() {
+    tick();
+    if (session) frame = requestAnimationFrame(loop);
+  }
+
+  function finish(outcome) {
+    if (!session) return;
+    const elapsedMs = Date.now() - session.startedAt;
+    const record = {
+      at: new Date().toISOString(),
+      first: session.first,
+      sit: session.sit,
+      elapsedMs,
+      outcome,
+    };
+
+    session = null;
+    if (frame) cancelAnimationFrame(frame);
+    while (backstops.length) clearTimeout(backstops.pop());
+    releaseScreen();
+
+    el.sit.dataset.phase = "idle";
+    el.note.textContent = outcome === "complete" ? "Sit complete" : "Settle, then begin";
+    el.start.hidden = false;
+    el.cancel.hidden = true;
+    setSettleFade("600ms");
+    renderDials();
+
+    save(record);
+    showLatest(record);
+  }
+
   // ── the practice log ────────────────────────────────────────────────────
   // Kept in the artifact's own store when it is reachable, so the log follows
   // between phone and laptop and survives clearing site data; localStorage
