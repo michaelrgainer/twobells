@@ -57,6 +57,7 @@
        starts a text selection and hauls the legend around with the pointer. */
     -webkit-user-select: none;
     user-select: none;
+    -webkit-touch-callout: none;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -233,6 +234,8 @@
 
   .ring-wrap svg { display: block; width: 100%; height: 100%; }
 
+  .ring-hit { fill: transparent; }
+
   .ring-track { fill: none; stroke: var(--track); stroke-width: 6; }
 
   .ring-arc { fill: none; stroke-width: 6; stroke-linecap: round; }
@@ -248,6 +251,12 @@
   .handle { stroke: var(--ground); stroke-width: 2; }
   .handle-meditate { fill: var(--ring); }
   .handle-settle { fill: var(--ring-soft); }
+
+  /* Once the first bell has rung the settle ring has nothing left to say, so it
+     goes rather than sitting there empty. */
+  .track-settle, .arc-settle { transition: opacity 900ms ease; }
+  .sit[data-phase="sitting"] .track-settle,
+  .sit[data-phase="sitting"] .arc-settle { opacity: 0; }
 
   .sit:not([data-phase="idle"]) .handle { opacity: 0; }
   .sit:not([data-phase="idle"]) #rings { cursor: default; }
@@ -351,8 +360,14 @@
 
   <div class="ring-wrap">
     <svg viewBox="0 0 200 200" id="rings" aria-hidden="true">
-      <circle class="ring-track" cx="100" cy="100" r="90"></circle>
-      <circle class="ring-track" cx="100" cy="100" r="66"></circle>
+      <!-- An SVG hit-tests rendered content only, and the tracks and arcs are
+           `fill: none`, so without this the sole pointer targets were their 6px
+           strokes: unhittable on a phone, and on a desktop the miss fell through
+           to the page as a text selection. `transparent` takes pointer events
+           where `none` does not. -->
+      <circle class="ring-hit" cx="100" cy="100" r="100"></circle>
+      <circle class="ring-track track-meditate" cx="100" cy="100" r="90"></circle>
+      <circle class="ring-track track-settle" cx="100" cy="100" r="66"></circle>
       <circle class="ring-arc arc-meditate" id="arc-sit" cx="100" cy="100" r="90"
               transform="rotate(-90 100 100)"></circle>
       <circle class="ring-arc arc-settle" id="arc-first" cx="100" cy="100" r="66"
