@@ -671,6 +671,7 @@
     listFirst: document.getElementById("list-first"),
     listSit: document.getElementById("list-sit"),
     showLast: document.getElementById("show-last"),
+    wordmark: document.querySelector(".wordmark"),
     contact: document.getElementById("contact"),
     copy: document.getElementById("copy"),
     pickShow: document.getElementById("pick-show"),
@@ -788,10 +789,29 @@
       partials: [[1, 0.42], [2.32, 0.08], [4.20, 0.03]] },
     { id: "string",  label: "String",    damping: 1.30,
       partials: [[1, 0.44], [2, 0.20], [3, 0.11], [4, 0.06], [5, 0.03]] },
+    // Not in the list until it is. A cowbell is a bent steel plate, so its
+    // partials sit at no sensible ratio at all and it stops almost at once --
+    // which is why it is funny here and why it would be unbearable to sit to.
+    { id: "cowbell", label: "Cowbell",   damping: 1.70, hit: 1.7, hitBand: 5.0,
+      hidden: true,
+      partials: [[1, 0.42], [3.10, 0.30], [5.42, 0.20], [7.24, 0.12], [9.90, 0.06]] },
   ];
 
+  const COWBELL_KEY = "two-bells:cowbell";
+  let cowbell = false;
+
+  function visibleTimbres() {
+    return TIMBRES.filter((body) => !body.hidden || cowbell);
+  }
+
   const CUSTOM_KEY = "two-bells:custom";
-  let custom = { pitch: 330, ring: 10, bright: 60, shimmer: 20, timbre: "church" };
+  let custom = { pitch: 330, ring: 10, bright: 60, shimmer: 20, timbre: "church",
+                 vibrate: false };
+
+  // iOS has never implemented this and shows no sign of starting, so the control
+  // is not offered there: a switch that does nothing is worse than no switch.
+  const CAN_VIBRATE = typeof navigator !== "undefined" &&
+                      typeof navigator.vibrate === "function";
 
   function customVoice() {
     const b = custom.bright / 100;
@@ -800,6 +820,7 @@
       id: "custom", label: "Custom",
       first: custom.pitch,
       decay: custom.ring,
+      vibrate: CAN_VIBRATE && custom.vibrate,
       // The body sets the relative decay rates; Brightness leans on them.
       damping: body.damping - b * 0.35,
       detune: (custom.shimmer / 100) * 0.006,
@@ -835,6 +856,10 @@
   // sound like a different instrument from the one that was chosen. Taking the
   // parameter away is what stops the two drifting apart again.
   function strike() {
+    // Before the audio guard: a phone with the ringer off, or a tab that never
+    // got its AudioContext, should still be able to say the bell has gone.
+    // Tap, gap, ring -- a strike rather than an alarm.
+    if (voice.vibrate) navigator.vibrate([30, 40, 160]);
     if (!audio) return;
     const now = audio.currentTime;
     const root = voice.first;
@@ -949,6 +974,10 @@
       const saved = JSON.parse(localStorage.getItem(CUSTOM_KEY) || "null");
       if (saved) custom = Object.assign(custom, saved);
     } catch (_) {}
+    try {
+      cowbell = localStorage.getItem(COWBELL_KEY) === "1";
+    } catch (_) {}
+    if (cowbell) el.wordmark.title = "More cowbell.";
 
     let start = PRESETS[0].id;
     try {
@@ -971,7 +1000,7 @@
     picker.setAttribute("role", "group");
     picker.setAttribute("aria-label", "Body");
 
-    TIMBRES.forEach((body) => {
+    visibleTimbres().forEach((body) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "timbre";
@@ -1039,6 +1068,61 @@
 
       row.append(label, value, range);
       el.tune.appendChild(row);
+    });
+
+    if (CAN_VIBRATE) el.tune.appendChild(buildVibrateRow());
+  }
+
+  function buildVibrateRow() {
+    const row = document.createElement("div");
+    row.className = "tune-row";
+
+    const label = document.createElement("span");
+    label.className = "dial-label";
+    label.textContent = "And vibrate";
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "timbre";
+    button.textContent = "Vibrate";
+    const show = () => button.setAttribute("aria-pressed", String(!!custom.vibrate));
+    show();
+
+    button.addEventListener("click", () => {
+      custom.vibrate = !custom.vibrate;
+      show();
+      voice = customVoice();
+      try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom)); } catch (_) {}
+      keepPanelOpen();
+      unlockAudio();
+      strike();
+    });
+
+    row.append(label, button);
+    return row;
+  }
+
+  // Five taps on the wordmark. Nothing announces it and nothing hints at it; the
+  // only people who will ever find it are the ones who were already going to.
+  function armCowbell() {
+    const WANTED = 5;
+    const WINDOW_MS = 3000;
+    let taps = [];
+    el.wordmark.addEventListener("click", () => {
+      if (cowbell) return;
+      const now = Date.now();
+      taps = taps.filter((at) => now - at < WINDOW_MS).concat(now);
+      if (taps.length < WANTED) return;
+      cowbell = true;
+      try { localStorage.setItem(COWBELL_KEY, "1"); } catch (_) {}
+      custom.timbre = "cowbell";
+      try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom)); } catch (_) {}
+      el.tune.textContent = "";
+      buildTune();
+      el.wordmark.title = "More cowbell.";
+      // Straight to it, and struck: an easter egg you have to go and find twice
+      // is one nobody finds once.
+      chooseVoice("custom");
     });
   }
 
@@ -1810,6 +1894,7 @@
   buildVoices();
   buildTune();
   buildPickers();
+  armCowbell();
   renderDials();
   loadLocal();
 

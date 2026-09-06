@@ -217,6 +217,71 @@ test("a tuned bell is not lost by trying another", SUITE, async (t) => {
   });
 });
 
+test("vibration, where the device has it", SUITE, async (t) => {
+  await t.test("the switch is offered, and remembered", () => {
+    const seen = run(`
+      document.querySelector('[data-voice="custom"]').click();
+      await wait(100);
+      const row = Array.from(document.querySelectorAll(".tune .tune-row"))
+        .find((r) => r.querySelector(".dial-label").textContent === "And vibrate");
+      if (!row) throw new Error("no vibrate row on a browser that has navigator.vibrate");
+      const button = row.querySelector(".timbre");
+      const before = button.getAttribute("aria-pressed");
+      button.click();
+      await wait(80);
+      return { before, after: button.getAttribute("aria-pressed"),
+               stored: JSON.parse(localStorage.getItem("two-bells:custom")).vibrate };
+    `);
+    assert.deepEqual([seen.before, seen.after], ["false", "true"]);
+    assert.equal(seen.stored, true);
+  });
+});
+
+test("more cowbell", SUITE, async (t) => {
+  const bodies = `Array.from(document.querySelectorAll(".timbre[data-timbre]")).map((b) => b.textContent)`;
+
+  await t.test("is not on the menu", () => {
+    const seen = run(`
+      document.querySelector('[data-voice="custom"]').click();
+      await wait(100);
+      return ${bodies};
+    `);
+    assert.ok(!seen.includes("Cowbell"), seen.join(", "));
+  });
+
+  await t.test("nor after a couple of idle taps", () => {
+    const seen = run(`
+      document.querySelector('[data-voice="custom"]').click();
+      await wait(100);
+      const wm = document.querySelector(".wordmark");
+      for (let i = 0; i < 3; i++) { wm.click(); await wait(30); }
+      await wait(150);
+      return ${bodies};
+    `);
+    assert.ok(!seen.includes("Cowbell"), seen.join(", "));
+  });
+
+  await t.test("but five taps finds it, and it stays found", () => {
+    const seen = run(`
+      const wm = document.querySelector(".wordmark");
+      for (let i = 0; i < 5; i++) { wm.click(); await wait(30); }
+      await wait(250);
+      return { bodies: ${bodies},
+               timbre: JSON.parse(localStorage.getItem("two-bells:custom")).timbre,
+               unlocked: localStorage.getItem("two-bells:cowbell"),
+               title: wm.title,
+               voice: seam.getState().voice };
+    `);
+    assert.ok(seen.bodies.includes("Cowbell"), seen.bodies.join(", "));
+    // Straight to it, and struck: an egg you have to go and find twice is one
+    // nobody finds once.
+    assert.equal(seen.timbre, "cowbell");
+    assert.equal(seen.voice, "custom");
+    assert.equal(seen.unlocked, "1");
+    assert.equal(seen.title, "More cowbell.");
+  });
+});
+
 test("the rings are the control", SUITE, async (t) => {
   await t.test("dragging the meditation handle changes the duration", () => {
     const seen = run(`

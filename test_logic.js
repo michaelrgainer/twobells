@@ -170,6 +170,26 @@ test("the running totals", async (t) => {
   });
 });
 
+test("a device with no vibration is not offered it", async (t) => {
+  await t.test("no such row in the tuning panel", () => {
+    // The stub's navigator has no vibrate, which is every iPhone. A switch that
+    // does nothing is worse than no switch.
+    const { nodes } = loadPage();
+    const labels = nodes["tune"].children
+      .map((row) => (row.children[0] || {}).textContent);
+    assert.ok(!labels.includes("And vibrate"), labels.join(", "));
+  });
+
+  await t.test("and the custom bell does not claim it can", () => {
+    const { seam } = loadPage({ seed: {
+      "two-bells:custom": JSON.stringify({ vibrate: true }),
+      "two-bells:voice": "custom" } });
+    // Stored from a phone that could, opened on a laptop that cannot.
+    assert.equal(seam.getState().voice, "custom");
+    assert.equal(global.navigator.vibrate, undefined);
+  });
+});
+
 test("when Contact appears", async (t) => {
   const { seam } = loadPage();
   const { contactFrom } = seam.internals;
