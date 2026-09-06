@@ -1329,6 +1329,7 @@
     el.sit.dataset.phase = first > 0 ? "waiting" : "sitting";
     el.note.textContent = first > 0 ? "Settling" : "";
     el.start.hidden = true;
+    el.cancel.textContent = first > 0 ? "Oops" : "End Now";
     el.cancel.hidden = false;
     closePanel();
 
@@ -1358,6 +1359,7 @@
       // voice.decay seconds, so that is how long the fade takes.
       setBellFade(voice.decay + "s");
       el.sit.dataset.phase = "sitting";
+      el.cancel.textContent = "End Now";
       el.note.textContent = "";
     }
 
@@ -1407,17 +1409,23 @@
     while (backstops.length) clearTimeout(backstops.pop());
     releaseScreen();
 
+    // The page returns over the closing bell, as slowly as it left over the
+    // first one. An early exit rings nothing, so there is nothing to return
+    // across: back to the stylesheet's own default.
+    if (outcome === "complete") setBellFade(voice.decay + "s");
+    else el.sit.style.removeProperty("--bell-fade");
     el.sit.dataset.phase = "idle";
     el.note.innerHTML = outcome === "complete" ? "Sit complete" : "Settle<br>then begin";
     el.start.hidden = false;
     el.cancel.hidden = true;
-    // Back to the stylesheet's own default rather than a number repeated here.
-    el.sit.style.removeProperty("--bell-fade");
     renderDials();
 
     if (worthKeeping) {
-      save(record);
+      // Into the list before it is written out: save() serialises history,
+      // so unshifting afterwards left the newest sit on the page but out of
+      // localStorage until some later save happened to pick it up.
       history.unshift(record);
+      save(record);
       renderLog();
     }
   }
@@ -1633,9 +1641,10 @@
       db.collection("sits").orderBy("at", "desc").limit(KEEP).get()
         .then((snap) => {
           if (snap.empty) return;
-          // The store is the fuller record: it follows between devices, where
-          // localStorage only ever remembers this one browser.
-          history = snap.docs.map((doc) => doc.data());
+          // The store follows between devices; this browser holds sits from
+          // before it was reachable. Neither is the fuller record on its own.
+          mergeHistory(snap.docs.map((doc) => doc.data()));
+          persistLocal();
           renderLog();
         })
         .catch(() => {});
