@@ -1,7 +1,7 @@
 # Two Bells
 
 A meditation timer. Two bells, an unwinding ring, and a one-line practice log.
-No ads, no donations, no countdown to peek at.
+No ads, no donations, no countdown to peek at. Free, forever.
 
 <https://twobells.org>
 
