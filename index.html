@@ -334,14 +334,15 @@
     <span class="leg-meditate">Meditate<b id="val-sit">20min</b></span>
   </div>
 
-  <!-- Each ring stops five units short of a full turn, leaving a visible gap at
-       twelve o'clock. Both ends of a ring are otherwise adjacent on screen while
-       being a whole turn apart in duration, and a gap you can see explains why the
-       tip stops where it does. 0 is a sensible settle (begin at once) and never a
-       sensible sit, so the floors differ. -->
-  <input class="sr" type="range" id="rng-first" min="0" max="55" step="1" value="10"
+  <!-- Full range on both rings. The two ends of a ring sit next to each other at
+       twelve o'clock while being a whole turn apart in duration, but the drag
+       handler treats a move of more than half a turn as a crossing and stops at
+       the boundary, so neither end can be reached by accident from the other.
+       0 is a sensible settle (begin at once) and never a sensible sit, so the
+       floors differ. -->
+  <input class="sr" type="range" id="rng-first" min="0" max="59" step="1" value="10"
          aria-label="Settle, seconds">
-  <input class="sr" type="range" id="rng-sit" min="5" max="60" step="1" value="20"
+  <input class="sr" type="range" id="rng-sit" min="1" max="60" step="1" value="20"
          aria-label="Meditate, minutes">
 
   <div class="ring-wrap">
