@@ -1479,10 +1479,11 @@
   // holds the same record for when it is not.
   const KEY = "two-bells:log";
   const LEGACY_KEY = "two-bells:last";
-  // Nothing is dropped on a number picked in advance. A sit is about a hundred
-  // bytes and the budget is megabytes, so the only honest moment to start
-  // forgetting is when the browser actually says it has run out.
-  const STORE_LIMIT = 1000;
+  // A year of sitting daily, plus a month to get round to exporting it. At about
+  // a hundred bytes a sit that is some forty kilobytes -- far enough inside the
+  // budget that the quota trim below should never be reached, and it is there
+  // for the browser that disagrees rather than as the plan.
+  const KEEP = 400;
   const FLOOR = 20;
   let store = null;
   let history = [];
@@ -1493,13 +1494,17 @@
   }
 
   function persistLocal() {
-    // The floor matters: Safari in private browsing refuses every write, and
-    // without it the log would be trimmed away trying to satisfy one.
+    // Past the cap the oldest simply go, and in place rather than only on the way
+    // out, so what the page shows and what a reload would find are one list.
+    if (history.length > KEEP) history = history.slice(0, KEEP);
     while (true) {
       try {
         localStorage.setItem(KEY, JSON.stringify(history));
         return;
       } catch (err) {
+        // For the browser that refuses even a capped write. The floor matters:
+        // Safari in private browsing refuses every one, and without it the log
+        // would be trimmed away trying to satisfy an impossible request.
         if (!isQuotaError(err) || history.length <= FLOOR) return;
         history = history.slice(0, Math.max(FLOOR, Math.floor(history.length * 0.9)));
       }
@@ -1702,7 +1707,7 @@
     });
     history = Array.from(byTime.values())
       .sort((a, b) => String(b.at).localeCompare(String(a.at)))
-      .slice(0, STORE_LIMIT);
+      .slice(0, KEEP);
   }
 
   function loadLocal() {
@@ -1752,7 +1757,7 @@
     window.claude.use("db").then((db) => {
       if (!db) return;
       store = db;
-      db.collection("sits").orderBy("at", "desc").limit(STORE_LIMIT).get()
+      db.collection("sits").orderBy("at", "desc").limit(KEEP).get()
         .then((snap) => {
           if (snap.empty) return;
           // The store follows between devices; this browser holds sits from
