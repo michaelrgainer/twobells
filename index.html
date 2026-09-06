@@ -26,6 +26,7 @@
     --ground:    #08090b;
     --ring:      #f0b429;
     --ring-dim:  #6b5220;
+    --ring-soft: #b9832e;
     --track:     #191c21;
     --text:      #ece5d8;
     --muted:     #767d88;
@@ -142,22 +143,32 @@
     color: var(--text);
   }
 
-  /* ── the dials ─────────────────────────────────────────────────────────── */
+  /* ── the legend ────────────────────────────────────────────────────────── */
 
-  .dials {
+  /* The rings are the control now, so this is a readout, not an input. Each value
+     is tinted to match the ring it belongs to. */
+  .legend {
     display: flex;
-    flex-direction: column;
-    gap: 20px;
-    width: 100%;
+    gap: 22px;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
     transition: opacity 700ms ease;
   }
 
-  .dial {
-    display: grid;
-    grid-template-columns: 1fr auto auto auto;
-    align-items: center;
-    gap: 12px;
+  .legend b {
+    font-weight: 400;
+    font-size: 15px;
+    letter-spacing: 0;
+    text-transform: none;
+    font-variant-numeric: tabular-nums;
+    margin-left: 6px;
   }
+
+  .leg-settle b { color: var(--ring-soft); }
+  .leg-meditate b { color: var(--ring); }
 
   .dial-label {
     font-size: 11px;
@@ -167,37 +178,16 @@
     color: var(--muted);
   }
 
-  .dial-value {
-    font-size: 19px;
-    font-weight: 400;
-    font-variant-numeric: tabular-nums;
-    color: var(--text);
-    min-width: 4.4ch;
-    text-align: right;
+  /* Kept for the keyboard and for screen readers: the rings are pointer-only, and
+     a control you can only reach with a pointer is a control some people cannot
+     reach at all. */
+  .sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
   }
-
-  .dial-value small {
-    font-size: 12px;
-    color: var(--muted);
-    margin-left: 3px;
-  }
-
-  .step {
-    width: 38px;
-    height: 38px;
-    border: 1px solid var(--hairline);
-    border-radius: 50%;
-    background: transparent;
-    color: var(--muted);
-    font-family: var(--ui);
-    font-size: 18px;
-    line-height: 1;
-    cursor: pointer;
-    transition: color 160ms ease, border-color 160ms ease;
-  }
-
-  .step:hover:not(:disabled) { color: var(--text); border-color: var(--ring-dim); }
-  .step:disabled { opacity: 0.3; cursor: default; }
 
   .slider {
     grid-column: 1 / -1;
@@ -233,7 +223,7 @@
 
   .ring-wrap {
     position: relative;
-    width: min(66vw, 250px);
+    width: min(78vw, 300px);
     aspect-ratio: 1;
   }
 
@@ -241,16 +231,22 @@
 
   .ring-track { fill: none; stroke: var(--track); stroke-width: 6; }
 
-  .ring-arc {
-    fill: none;
-    stroke: var(--ring);
-    stroke-width: 6;
-    stroke-linecap: round;
-  }
+  .ring-arc { fill: none; stroke-width: 6; stroke-linecap: round; }
 
-  /* The pre-bell wait is a quieter state than the sit itself, so the ring is
-     dimmed rather than given a second colour. */
-  .sit[data-phase="waiting"] .ring-arc { stroke: var(--ring-dim); }
+  .arc-meditate { stroke: var(--ring); }
+  .arc-settle { stroke: var(--ring-soft); }
+
+  #rings { touch-action: none; cursor: grab; }
+  #rings:active { cursor: grabbing; }
+
+  /* The tip you grab. Hidden once a sit is running -- the durations are settled by
+     then, and a handle that looks draggable but is not is a lie. */
+  .handle { stroke: var(--ground); stroke-width: 2; }
+  .handle-meditate { fill: var(--ring); }
+  .handle-settle { fill: var(--ring-soft); }
+
+  .sit:not([data-phase="idle"]) .handle { opacity: 0; }
+  .sit:not([data-phase="idle"]) #rings { cursor: default; }
 
   .ring-centre {
     position: absolute;
@@ -310,8 +306,8 @@
   .log em { font-style: italic; color: var(--rose); }
   .log b { font-weight: 400; color: var(--text); }
 
-  .sit[data-phase="waiting"] .dials,
-  .sit[data-phase="sitting"] .dials,
+  .sit[data-phase="waiting"] .legend,
+  .sit[data-phase="sitting"] .legend,
   .sit[data-phase="waiting"] .tune,
   .sit[data-phase="sitting"] .tune,
   .sit[data-phase="waiting"] .voices,
@@ -333,31 +329,26 @@
 
   <div class="tune" id="tune" hidden></div>
 
-  <div class="dials" id="dials">
-    <div class="dial">
-      <span class="dial-label" id="lbl-first">Settle Down</span>
-      <button class="step" data-dial="first" data-delta="-1" aria-label="Settle down, one second less">&minus;</button>
-      <span class="dial-value" id="val-first">10<small>s</small></span>
-      <button class="step" data-dial="first" data-delta="1" aria-label="Settle down, one second more">+</button>
-      <input class="slider" type="range" id="rng-first" min="0" max="60" step="1" value="10"
-             aria-labelledby="lbl-first">
-    </div>
-
-    <div class="dial">
-      <span class="dial-label" id="lbl-sit">Meditate</span>
-      <button class="step" data-dial="sit" data-delta="-1" aria-label="Meditate, one minute less">&minus;</button>
-      <span class="dial-value" id="val-sit">20<small>min</small></span>
-      <button class="step" data-dial="sit" data-delta="1" aria-label="Meditate, one minute more">+</button>
-      <input class="slider" type="range" id="rng-sit" min="1" max="60" step="1" value="20"
-             aria-labelledby="lbl-sit">
-    </div>
+  <div class="legend" id="legend">
+    <span class="leg-settle">Settle<b id="val-first">10s</b></span>
+    <span class="leg-meditate">Meditate<b id="val-sit">20min</b></span>
   </div>
 
+  <input class="sr" type="range" id="rng-first" min="0" max="60" step="1" value="10"
+         aria-label="Settle, seconds">
+  <input class="sr" type="range" id="rng-sit" min="1" max="60" step="1" value="20"
+         aria-label="Meditate, minutes">
+
   <div class="ring-wrap">
-    <svg viewBox="0 0 200 200" aria-hidden="true">
-      <circle class="ring-track" cx="100" cy="100" r="92"></circle>
-      <circle class="ring-arc" id="arc" cx="100" cy="100" r="92"
+    <svg viewBox="0 0 200 200" id="rings" aria-hidden="true">
+      <circle class="ring-track" cx="100" cy="100" r="90"></circle>
+      <circle class="ring-track" cx="100" cy="100" r="66"></circle>
+      <circle class="ring-arc arc-meditate" id="arc-sit" cx="100" cy="100" r="90"
               transform="rotate(-90 100 100)"></circle>
+      <circle class="ring-arc arc-settle" id="arc-first" cx="100" cy="100" r="66"
+              transform="rotate(-90 100 100)"></circle>
+      <circle class="handle handle-meditate" id="grip-sit" r="8"></circle>
+      <circle class="handle handle-settle" id="grip-first" r="8"></circle>
     </svg>
     <div class="ring-centre">
       <div class="ring-note" id="note">Settle, then begin</div>
@@ -378,7 +369,11 @@
 
   const el = {
     sit: document.getElementById("sit"),
-    arc: document.getElementById("arc"),
+    rings: document.getElementById("rings"),
+    arcFirst: document.getElementById("arc-first"),
+    arcSit: document.getElementById("arc-sit"),
+    gripFirst: document.getElementById("grip-first"),
+    gripSit: document.getElementById("grip-sit"),
     note: document.getElementById("note"),
     start: document.getElementById("start"),
     cancel: document.getElementById("cancel"),
@@ -391,9 +386,33 @@
     valSit: document.getElementById("val-sit"),
   };
 
-  const CIRCUMFERENCE = 2 * Math.PI * 92;
-  el.arc.style.strokeDasharray = String(CIRCUMFERENCE);
-  el.arc.style.strokeDashoffset = "0";
+  // Sixty units fill a ring, whether they are seconds of settling or minutes of
+  // sitting, so both rings read on one absolute scale: 45s of settle and 45min of
+  // sit both stand at three quarters, and the tip travels one sixtieth of a turn
+  // per unit on either. The two radii are the two dials.
+  const RING_UNITS = 60;
+  const DIALS = [
+    { key: "sit",   radius: 90, arc: "arcSit",   grip: "gripSit",   range: "rngSit" },
+    { key: "first", radius: 66, arc: "arcFirst", grip: "gripFirst", range: "rngFirst" },
+  ];
+
+  DIALS.forEach((dial) => {
+    dial.circumference = 2 * Math.PI * dial.radius;
+    el[dial.arc].style.strokeDasharray = String(dial.circumference);
+  });
+
+  function paintDial(dial, units) {
+    const fraction = Math.max(0, Math.min(1, units / RING_UNITS));
+    // Unwinds counterclockwise: the arc is drawn clockwise from twelve, so a
+    // growing offset retreats its leading edge back the other way.
+    el[dial.arc].style.strokeDashoffset =
+      String(dial.circumference * (1 - fraction));
+    // The grip sits on that leading edge -- it IS the tip of the arc, which is
+    // what makes it obvious that dragging it is what sets the duration.
+    const angle = (-90 + fraction * 360) * Math.PI / 180;
+    el[dial.grip].setAttribute("cx", String(100 + dial.radius * Math.cos(angle)));
+    el[dial.grip].setAttribute("cy", String(100 + dial.radius * Math.sin(angle)));
+  }
 
   // ── the bell ────────────────────────────────────────────────────────────
   // Synthesised rather than fetched: an audio file would be a network request
@@ -468,7 +487,7 @@
   ];
 
   const CUSTOM_KEY = "two-bells:custom";
-  let custom = { pitch: 210, ring: 8, bright: 50, shimmer: 35, timbre: "bowl" };
+  let custom = { pitch: 330, ring: 10, bright: 60, shimmer: 20, timbre: "church" };
 
   function customVoice() {
     const b = custom.bright / 100;
@@ -572,9 +591,37 @@
     });
   }
 
+  // The panel is tall enough to push the rings off a phone screen, so it does not
+  // rely on being dismissed: any stretch of not touching it puts it away again.
+  const PANEL_IDLE_MS = 10000;
+  let panelTimer = null;
+
+  function closePanel() {
+    el.tune.hidden = true;
+    clearTimeout(panelTimer);
+    panelTimer = null;
+  }
+
+  function openPanel() {
+    el.tune.hidden = false;
+    keepPanelOpen();
+  }
+
+  function keepPanelOpen() {
+    clearTimeout(panelTimer);
+    panelTimer = setTimeout(closePanel, PANEL_IDLE_MS);
+  }
+
   function chooseVoice(id) {
+    // Custom toggles its own panel, and a second tap is a request to put the panel
+    // away rather than to hear the bell again -- by then it has just been heard
+    // from a slider or a body button.
+    if (id === "custom" && voice.id === "custom" && !el.tune.hidden) {
+      closePanel();
+      return;
+    }
     applyVoice(id);
-    el.tune.hidden = id !== "custom";
+    if (id === "custom") openPanel(); else closePanel();
     unlockAudio();
     strike("first");
   }
@@ -631,6 +678,7 @@
         });
         voice = customVoice();
         try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom)); } catch (_) {}
+        keepPanelOpen();
         unlockAudio();
         strike("first");
       });
@@ -671,11 +719,16 @@
         show();
         voice = customVoice();
         try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom)); } catch (_) {}
+        keepPanelOpen();
       });
 
       // Struck on release, not on every step of the drag: `input` fires per pixel
       // and would stack a hundred overlapping bells.
-      range.addEventListener("change", () => { unlockAudio(); strike("first"); });
+      range.addEventListener("change", () => {
+        keepPanelOpen();
+        unlockAudio();
+        strike("first");
+      });
 
       row.append(label, value, range);
       el.tune.appendChild(row);
@@ -710,25 +763,71 @@
 
   function renderDials() {
     const { first, sit } = settings();
-    el.valFirst.innerHTML = first + "<small>s</small>";
-    el.valSit.innerHTML = sit + "<small>min</small>";
-    if (!session) setArc(sit);
+    el.valFirst.textContent = first + "s";
+    el.valSit.textContent = sit + "min";
+    if (!session) {
+      paintDial(DIALS[0], sit);
+      paintDial(DIALS[1], first);
+    }
   }
 
-  // Sixty units fill the ring, whether those units are seconds of settling or
-  // minutes of sitting. So the arc is an absolute reading, not a percentage of
-  // whatever was chosen: 45 seconds of prep starts at three quarters, 20 minutes
-  // starts at a third, and the edge travels at one unit per sixtieth of a turn
-  // no matter how the dials are set.
-  const RING_UNITS = 60;
+  // ── dragging a tip ──────────────────────────────────────────────────────
+  // Which ring you grabbed is decided by how far from the centre you touched, so
+  // the whole annulus is a target rather than just the eight-pixel grip.
+  let dragging = null;
 
-  function setArc(units) {
-    // Unwinds counterclockwise: the arc is drawn clockwise from twelve, so a
-    // growing offset retreats its leading edge back the other way. No ticks and
-    // no digits — the shape of the sit without an invitation to count it down.
-    const clamped = Math.max(0, Math.min(1, units / RING_UNITS));
-    el.arc.style.strokeDashoffset = String(CIRCUMFERENCE * (1 - clamped));
+  function ringPoint(event) {
+    const box = el.rings.getBoundingClientRect();
+    const scale = 200 / box.width;
+    return {
+      x: (event.clientX - box.left) * scale - 100,
+      y: (event.clientY - box.top) * scale - 100,
+    };
   }
+
+  function nearestDial(point) {
+    const distance = Math.hypot(point.x, point.y);
+    // Ignore the hole in the middle: a tap there is not aimed at either ring.
+    if (distance < 40 || distance > 112) return null;
+    return DIALS.reduce((best, dial) =>
+      Math.abs(distance - dial.radius) < Math.abs(distance - best.radius) ? dial : best);
+  }
+
+  function setFromPoint(dial, point) {
+    // Clockwise from twelve, so the value grows the way the arc is drawn.
+    let degrees = Math.atan2(point.y, point.x) * 180 / Math.PI + 90;
+    if (degrees < 0) degrees += 360;
+    const range = el[dial.range];
+    const previous = Number(range.value);
+    let units = Math.round(degrees / 360 * RING_UNITS);
+    // Twelve o'clock is both 0 and 60. Read literally, the top of the ring means
+    // zero, so 60 minutes could never be chosen and a drag across the top would
+    // snap from 59 straight to 1. A move of more than half a turn is a crossing,
+    // not a jump, so it stops at the boundary it was heading for.
+    if (previous - units > RING_UNITS / 2) units = RING_UNITS;
+    else if (units - previous > RING_UNITS / 2) units = 0;
+    range.value = String(Math.max(Number(range.min), Math.min(Number(range.max), units)));
+    renderDials();
+  }
+
+  el.rings.addEventListener("pointerdown", (event) => {
+    if (session) return;                       // durations are fixed once running
+    const point = ringPoint(event);
+    const dial = nearestDial(point);
+    if (!dial) return;
+    dragging = dial;
+    el.rings.setPointerCapture(event.pointerId);
+    setFromPoint(dial, point);
+    event.preventDefault();
+  });
+
+  el.rings.addEventListener("pointermove", (event) => {
+    if (dragging) setFromPoint(dragging, ringPoint(event));
+  });
+
+  ["pointerup", "pointercancel"].forEach((type) => {
+    el.rings.addEventListener(type, () => { dragging = null; });
+  });
 
   function begin() {
     unlockAudio();
@@ -748,7 +847,7 @@
     el.note.textContent = first > 0 ? "Settling" : "";
     el.start.hidden = true;
     el.cancel.hidden = false;
-    el.tune.hidden = true;
+    closePanel();
 
     // Absolute deadlines, not accumulated intervals, so a throttled frame loop
     // cannot make the sit drift longer than it was set for.
@@ -775,9 +874,11 @@
     }
 
     if (session.rang) {
-      setArc((session.endAt - now) / 60000);     // minutes left, of sixty
+      paintDial(DIALS[1], 0);
+      paintDial(DIALS[0], (session.endAt - now) / 60000);   // minutes left, of sixty
     } else {
-      setArc((session.bellAt - now) / 1000);     // seconds left, of sixty
+      paintDial(DIALS[0], session.sit);                     // still to come
+      paintDial(DIALS[1], (session.bellAt - now) / 1000);   // seconds left, of sixty
     }
   }
 
@@ -806,7 +907,7 @@
     el.note.textContent = outcome === "complete" ? "Sit complete" : "Settle, then begin";
     el.start.hidden = false;
     el.cancel.hidden = true;
-    setArc(settings().sit);
+    renderDials();
 
     save(record);
     showLatest(record);
@@ -856,15 +957,6 @@
   // ── wiring ──────────────────────────────────────────────────────────────
   el.rngFirst.addEventListener("input", renderDials);
   el.rngSit.addEventListener("input", renderDials);
-
-  document.querySelectorAll(".step").forEach((button) => {
-    button.addEventListener("click", () => {
-      const range = button.dataset.dial === "first" ? el.rngFirst : el.rngSit;
-      const next = Number(range.value) + Number(button.dataset.delta);
-      range.value = String(Math.max(Number(range.min), Math.min(Number(range.max), next)));
-      renderDials();
-    });
-  });
 
   el.start.addEventListener("click", begin);
   el.cancel.addEventListener("click", () => finish("cancelled"));
