@@ -163,17 +163,32 @@
     transition: opacity 700ms ease;
   }
 
-  .legend b {
+  /* A real <select>, so a phone gives its own scrolling wheel and a keyboard user
+     gets a listbox, instead of a bespoke overlay that would work like neither.
+     The dotted underline is the affordance: tap-and-drag on a ring is a fine
+     gesture once you know it exists, and no way to learn that it does. */
+  .legend .pick {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    border: none;
+    border-bottom: 1px dotted currentColor;
+    border-radius: 0;
+    padding: 2px 0 1px;
+    margin-left: 6px;
+    font-family: inherit;
     font-weight: 400;
     font-size: 15px;
     letter-spacing: 0;
     text-transform: none;
     font-variant-numeric: tabular-nums;
-    margin-left: 6px;
+    cursor: pointer;
   }
 
-  .leg-settle b { color: var(--ring-soft); }
-  .leg-meditate b { color: var(--ring); }
+  .leg-settle .pick { color: var(--ring-soft); }
+  .leg-meditate .pick { color: var(--ring); }
+
+  .legend .pick option { background: var(--ground); color: var(--text); }
 
   .dial-label {
     font-size: 11px;
@@ -234,7 +249,10 @@
 
   .ring-wrap svg { display: block; width: 100%; height: 100%; }
 
-  .ring-hit { fill: transparent; }
+  /* `pointer-events: all` hit-tests regardless of whether the browser considers a
+     fully transparent fill to be painted -- the default `visiblePainted` leaves
+     that to interpretation, and mobile engines have differed. */
+  .ring-hit { fill: transparent; pointer-events: all; }
 
   .ring-track { fill: none; stroke: var(--track); stroke-width: 6; }
 
@@ -346,8 +364,10 @@
   <div class="tune" id="tune" hidden></div>
 
   <div class="legend" id="legend">
-    <span class="leg-settle">Settle<b id="val-first">10s</b></span>
-    <span class="leg-meditate">Meditate<b id="val-sit">20min</b></span>
+    <span class="leg-settle">Settle<select class="pick" id="sel-first"
+        aria-label="Settle, seconds"></select></span>
+    <span class="leg-meditate">Meditate<select class="pick" id="sel-sit"
+        aria-label="Meditate, minutes"></select></span>
   </div>
 
   <!-- Full range on both rings. The two ends of a ring sit next to each other at
@@ -357,9 +377,9 @@
        0 is a sensible settle (begin at once) and never a sensible sit, so the
        floors differ. -->
   <input class="sr" type="range" id="rng-first" min="0" max="59" step="1" value="10"
-         aria-label="Settle, seconds">
+         tabindex="-1" aria-hidden="true">
   <input class="sr" type="range" id="rng-sit" min="1" max="60" step="1" value="20"
-         aria-label="Meditate, minutes">
+         tabindex="-1" aria-hidden="true">
 
   <div class="ring-wrap">
     <svg viewBox="0 0 200 200" id="rings" aria-hidden="true">
@@ -411,8 +431,8 @@
     tune: document.getElementById("tune"),
     rngFirst: document.getElementById("rng-first"),
     rngSit: document.getElementById("rng-sit"),
-    valFirst: document.getElementById("val-first"),
-    valSit: document.getElementById("val-sit"),
+    selFirst: document.getElementById("sel-first"),
+    selSit: document.getElementById("sel-sit"),
   };
 
   // Sixty units fill a ring, whether they are seconds of settling or minutes of
@@ -795,10 +815,54 @@
     return { first: Number(el.rngFirst.value), sit: Number(el.rngSit.value) };
   }
 
+  // Coarse by 5s in the list, exact on the ring. The list is deliberately short --
+  // sixty entries would be a scroll, twelve is a glance.
+  const PICKERS = [
+    { select: "selFirst", range: "rngFirst", unit: "s",
+      grid: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55] },
+    { select: "selSit", range: "rngSit", unit: "min",
+      grid: [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60] },
+  ];
+
+  function syncPicker(picker) {
+    const select = el[picker.select];
+    const value = Number(el[picker.range].value);
+    // A ring drag lands on values the grid does not contain, and a select cannot
+    // display a value it has no option for -- so the odd one out is spliced in.
+    const wanted = picker.grid.includes(value)
+      ? picker.grid
+      : picker.grid.concat([value]).sort((a, b) => a - b);
+    const signature = wanted.join(",");
+    if (select.dataset.grid !== signature) {
+      select.textContent = "";
+      wanted.forEach((option) => {
+        const node = document.createElement("option");
+        node.value = String(option);
+        node.textContent = option + picker.unit;
+        select.appendChild(node);
+      });
+      select.dataset.grid = signature;
+    }
+    select.value = String(value);
+  }
+
+  function buildPickers() {
+    PICKERS.forEach((picker) => {
+      syncPicker(picker);
+      el[picker.select].addEventListener("change", () => {
+        el[picker.range].value = el[picker.select].value;
+        renderDials();
+      });
+    });
+  }
+
   function renderDials() {
     const { first, sit } = settings();
-    el.valFirst.textContent = first + "s";
-    el.valSit.textContent = sit + "min";
+    PICKERS.forEach((picker) => {
+      // Not while its own wheel is open: rebuilding the options underneath a
+      // picker the user is scrolling would close it.
+      if (document.activeElement !== el[picker.select]) syncPicker(picker);
+    });
     // The button names what pressing it actually starts. With settling time on the
     // clock the first thing that happens is settling, not the sit.
     el.start.textContent = first > 0 ? "Settle" : "Begin";
@@ -847,115 +911,36 @@
     renderDials();
   }
 
+  function onDragMove(event) {
+    if (dragging) setFromPoint(dragging, ringPoint(event));
+  }
+
+  function endDrag() {
+    dragging = null;
+    window.removeEventListener("pointermove", onDragMove);
+    window.removeEventListener("pointerup", endDrag);
+    window.removeEventListener("pointercancel", endDrag);
+  }
+
   el.rings.addEventListener("pointerdown", (event) => {
-    // Suppressed before anything else, and whether or not a ring was hit: a
-    // mouse-down that falls in the hole or between the rings would otherwise
-    // begin a native text-selection drag.
+    // Suppressed first, and whether or not a ring was hit: a press that lands in
+    // the hole would otherwise begin a native text-selection drag.
     event.preventDefault();
     if (session) return;                       // durations are fixed once running
     const point = ringPoint(event);
     const dial = nearestDial(point);
     if (!dial) return;
     dragging = dial;
-    el.rings.setPointerCapture(event.pointerId);
+    // Capture is an optimisation, not the mechanism. Mobile Safari has thrown on
+    // setPointerCapture for SVG elements, and when it did, everything after it in
+    // this handler was skipped -- so the ring never moved and the whole gesture
+    // looked dead. The window listeners below do the actual work.
+    try { el.rings.setPointerCapture(event.pointerId); } catch (_) {}
+    window.addEventListener("pointermove", onDragMove);
+    window.addEventListener("pointerup", endDrag);
+    window.addEventListener("pointercancel", endDrag);
     setFromPoint(dial, point);
   });
-
-  el.rings.addEventListener("pointermove", (event) => {
-    if (dragging) setFromPoint(dragging, ringPoint(event));
-  });
-
-  ["pointerup", "pointercancel"].forEach((type) => {
-    el.rings.addEventListener(type, () => { dragging = null; });
-  });
-
-  function begin() {
-    unlockAudio();
-    holdScreen();
-
-    const { first, sit } = settings();
-    const now = Date.now();
-    session = {
-      first, sit,
-      startedAt: now,
-      bellAt: now + first * 1000,
-      endAt: now + first * 1000 + sit * 60000,
-      rang: false,
-    };
-
-    el.sit.dataset.phase = first > 0 ? "waiting" : "sitting";
-    el.note.textContent = first > 0 ? "Settling" : "";
-    el.start.hidden = true;
-    el.cancel.hidden = false;
-    closePanel();
-
-    // Absolute deadlines, not accumulated intervals, so a throttled frame loop
-    // cannot make the sit drift longer than it was set for.
-    backstops.push(setTimeout(() => tick(), Math.max(0, session.bellAt - now) + 40));
-    backstops.push(setTimeout(() => tick(), Math.max(0, session.endAt - now) + 40));
-    loop();
-  }
-
-  function tick() {
-    if (!session) return;
-    const now = Date.now();
-
-    if (!session.rang && now >= session.bellAt) {
-      session.rang = true;
-      strike("first");
-      // The ring goes out with the bell: the fundamental rings for exactly
-      // voice.decay seconds, so that is how long the settle ring takes to fade.
-      setSettleFade(voice.decay + "s");
-      el.sit.dataset.phase = "sitting";
-      el.note.textContent = "";
-    }
-
-    if (now >= session.endAt) {
-      strike("close");
-      finish("complete");
-      return;
-    }
-
-    if (session.rang) {
-      paintDial(DIALS[1], 0);
-      paintDial(DIALS[0], (session.endAt - now) / 60000);   // minutes left, of sixty
-    } else {
-      paintDial(DIALS[0], session.sit);                     // still to come
-      paintDial(DIALS[1], (session.bellAt - now) / 1000);   // seconds left, of sixty
-    }
-  }
-
-  function loop() {
-    tick();
-    if (session) frame = requestAnimationFrame(loop);
-  }
-
-  function finish(outcome) {
-    if (!session) return;
-    const elapsedMs = Date.now() - session.startedAt;
-    const record = {
-      at: new Date().toISOString(),
-      first: session.first,
-      sit: session.sit,
-      elapsedMs,
-      outcome,
-    };
-
-    session = null;
-    if (frame) cancelAnimationFrame(frame);
-    while (backstops.length) clearTimeout(backstops.pop());
-    releaseScreen();
-
-    el.sit.dataset.phase = "idle";
-    el.note.textContent = outcome === "complete" ? "Sit complete" : "Settle, then begin";
-    el.start.hidden = false;
-    el.cancel.hidden = true;
-    setSettleFade("600ms");
-    renderDials();
-
-    save(record);
-    showLatest(record);
-  }
 
   // ── the practice log ────────────────────────────────────────────────────
   // Kept in the artifact's own store when it is reachable, so the log follows
@@ -1013,6 +998,7 @@
 
   buildVoices();
   buildTune();
+  buildPickers();
   renderDials();
   loadLocal();
 
