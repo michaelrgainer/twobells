@@ -68,7 +68,7 @@
 
   .wordmark {
     font-family: var(--display);
-    font-size: 30px;
+    font-size: 33px;
     font-weight: 400;
     letter-spacing: 0.10em;
     color: var(--muted);
@@ -83,7 +83,7 @@
 
   .voice {
     font-family: var(--ui);
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 500;
     letter-spacing: 0.10em;
     text-transform: uppercase;
@@ -123,7 +123,7 @@
 
   .timbre {
     font-family: var(--ui);
-    font-size: 12px;
+    font-size: 13px;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     padding: 10px 14px;
@@ -143,7 +143,7 @@
   .tune-row .slider { grid-column: 1 / -1; }
 
   .tune-value {
-    font-size: 16px;
+    font-size: 17px;
     font-variant-numeric: tabular-nums;
     color: var(--text);
   }
@@ -157,7 +157,7 @@
     flex-wrap: wrap;
     justify-content: center;
     gap: 10px 20px;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 500;
     letter-spacing: 0.14em;
     text-transform: uppercase;
@@ -165,11 +165,12 @@
     transition: opacity 700ms ease;
   }
 
-  /* A real <select>, so a phone gives its own scrolling wheel and a keyboard user
-     gets a listbox, instead of a bespoke overlay that would work like neither.
-     The dotted underline is the affordance: tap-and-drag on a ring is a fine
-     gesture once you know it exists, and no way to learn that it does. */
-  .legend .pick {
+  /* Anchored on the number rather than a native <select>: Android Chrome renders
+     one as a full-screen dialog, which is a lot of ceremony for picking 20. This
+     covers the number and a couple of values either side of it, and nothing else. */
+  .pick-wrap { position: relative; display: inline-block; }
+
+  .pick {
     -webkit-appearance: none;
     appearance: none;
     background: transparent;
@@ -180,20 +181,78 @@
     margin-left: 6px;
     font-family: inherit;
     font-weight: 400;
-    font-size: 21px;
+    font-size: 24px;
     letter-spacing: 0;
     text-transform: none;
     font-variant-numeric: tabular-nums;
+    color: inherit;
     cursor: pointer;
   }
 
   .leg-settle .pick { color: var(--ring-soft); }
   .leg-meditate .pick { color: var(--ring); }
 
-  .legend .pick option { background: var(--ground); color: var(--text); }
+  .picker {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 5;
+    width: 104px;
+    height: 220px;
+    border-radius: 14px;
+    border: 1px solid var(--ring-dim);
+    background: #0e1116;
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.65);
+    overflow: hidden;
+  }
+
+  .picker[hidden] { display: none; }
+
+  .picker-list {
+    height: 100%;
+    overflow-y: auto;
+    scroll-snap-type: y mandatory;
+    scrollbar-width: none;
+    /* Two rows of padding so the first and last values can still reach the
+       middle of the window. */
+    padding: 88px 0;
+  }
+
+  .picker-list::-webkit-scrollbar { display: none; }
+
+  .picker-item {
+    height: 44px;
+    line-height: 44px;
+    text-align: center;
+    font-size: 21px;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    scroll-snap-align: center;
+    cursor: pointer;
+  }
+
+  .picker-item[aria-selected="true"] { color: var(--text); font-weight: 500; }
+
+  /* Shown only when there is actually more in that direction, so the fade means
+     "keep going" rather than being decoration that is always on. */
+  .fade {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 58px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 200ms ease;
+  }
+
+  .fade-top { top: 0; background: linear-gradient(to bottom, #0e1116, transparent); }
+  .fade-bottom { bottom: 0; background: linear-gradient(to top, #0e1116, transparent); }
+  .picker.can-up .fade-top { opacity: 1; }
+  .picker.can-down .fade-bottom { opacity: 1; }
 
   .dial-label {
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 500;
     letter-spacing: 0.14em;
     text-transform: uppercase;
@@ -247,6 +306,11 @@
     position: relative;
     width: min(78vw, 300px);
     aspect-ratio: 1;
+    /* On the HTML box as well as the <svg>. Browsers apply touch-action reliably
+       to an HTML element; on an SVG element it has been ignored, and when it is,
+       the browser claims the gesture as a scroll and cancels the pointer sequence
+       before a single move is delivered -- a drag that does nothing at all. */
+    touch-action: none;
   }
 
   .ring-wrap svg { display: block; width: 100%; height: 100%; }
@@ -312,7 +376,12 @@
   .sit:not([data-phase="idle"]) .handle-settle { opacity: 0; }
   .sit[data-phase="waiting"] .handle-meditate { opacity: 0; }
 
+  /* This sits on top of the whole ring area. Without pointer-events: none it eats
+     every press before the rings see one -- which is why tapping and dragging did
+     nothing on a phone, and why a desktop press fell through to the page and
+     started a text selection instead. The note is for reading, not for pressing. */
   .ring-centre {
+    pointer-events: none;
     position: absolute;
     inset: 0;
     display: grid;
@@ -325,7 +394,7 @@
     font-family: var(--display);
     font-style: italic;
     font-weight: 400;
-    font-size: 23px;
+    font-size: 26px;
     line-height: 1.4;
     color: var(--muted);
     transition: opacity 600ms ease;
@@ -337,7 +406,7 @@
 
   .btn {
     font-family: var(--ui);
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 500;
     letter-spacing: 0.12em;
     text-transform: uppercase;
@@ -360,7 +429,7 @@
   .log {
     transition: opacity 700ms ease;
     font-family: var(--display);
-    font-size: 20px;
+    font-size: 22px;
     font-weight: 400;
     color: var(--muted);
     text-align: center;
@@ -396,10 +465,20 @@
   <div class="tune" id="tune" hidden></div>
 
   <div class="legend" id="legend">
-    <span class="leg-settle">Settle<select class="pick" id="sel-first"
-        aria-label="Settle, seconds"></select></span>
-    <span class="leg-meditate">Meditate<select class="pick" id="sel-sit"
-        aria-label="Meditate, minutes"></select></span>
+    <span class="leg-settle">Settle<span class="pick-wrap">
+      <button type="button" class="pick" id="pick-first" aria-haspopup="listbox"
+              aria-expanded="false" aria-label="Settle, seconds">10s</button>
+      <div class="picker" id="picker-first" hidden>
+        <div class="picker-list" id="list-first" role="listbox"></div>
+        <div class="fade fade-top"></div><div class="fade fade-bottom"></div>
+      </div></span></span>
+    <span class="leg-meditate">Meditate<span class="pick-wrap">
+      <button type="button" class="pick" id="pick-sit" aria-haspopup="listbox"
+              aria-expanded="false" aria-label="Meditate, minutes">20min</button>
+      <div class="picker" id="picker-sit" hidden>
+        <div class="picker-list" id="list-sit" role="listbox"></div>
+        <div class="fade fade-top"></div><div class="fade fade-bottom"></div>
+      </div></span></span>
   </div>
 
   <!-- Full range on both rings. The two ends of a ring sit next to each other at
@@ -433,7 +512,7 @@
       <circle class="handle handle-settle" id="grip-first" r="8"></circle>
     </svg>
     <div class="ring-centre">
-      <div class="ring-note" id="note">Settle, then begin</div>
+      <div class="ring-note" id="note">Settle<br>then begin</div>
     </div>
   </div>
 
@@ -467,8 +546,12 @@
     tune: document.getElementById("tune"),
     rngFirst: document.getElementById("rng-first"),
     rngSit: document.getElementById("rng-sit"),
-    selFirst: document.getElementById("sel-first"),
-    selSit: document.getElementById("sel-sit"),
+    pickFirst: document.getElementById("pick-first"),
+    pickSit: document.getElementById("pick-sit"),
+    pickerFirst: document.getElementById("picker-first"),
+    pickerSit: document.getElementById("picker-sit"),
+    listFirst: document.getElementById("list-first"),
+    listSit: document.getElementById("list-sit"),
   };
 
   // Sixty units fill a ring, whether they are seconds of settling or minutes of
@@ -857,55 +940,100 @@
     return { first: Number(el.rngFirst.value), sit: Number(el.rngSit.value) };
   }
 
-  // Coarse by 5s in the list, exact on the ring. The list is deliberately short --
-  // sixty entries would be a scroll, twelve is a glance.
+  // Coarse by 5s in the list, exact on the ring.
+  const ITEM_HEIGHT = 44;
   const PICKERS = [
-    { select: "selFirst", range: "rngFirst", unit: "s",
+    { button: "pickFirst", panel: "pickerFirst", list: "listFirst",
+      range: "rngFirst", unit: "s",
       grid: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55] },
-    { select: "selSit", range: "rngSit", unit: "min",
+    { button: "pickSit", panel: "pickerSit", list: "listSit",
+      range: "rngSit", unit: "min",
       grid: [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60] },
   ];
 
-  function syncPicker(picker) {
-    const select = el[picker.select];
+  let openPicker = null;
+
+  function pickerValues(picker) {
     const value = Number(el[picker.range].value);
-    // A ring drag lands on values the grid does not contain, and a select cannot
-    // display a value it has no option for -- so the odd one out is spliced in.
-    const wanted = picker.grid.includes(value)
+    // A ring drag lands on values the grid does not contain; the odd one out is
+    // spliced in rather than silently rounded away.
+    return picker.grid.includes(value)
       ? picker.grid
       : picker.grid.concat([value]).sort((a, b) => a - b);
-    const signature = wanted.join(",");
-    if (select.dataset.grid !== signature) {
-      select.textContent = "";
-      wanted.forEach((option) => {
-        const node = document.createElement("option");
-        node.value = String(option);
-        node.textContent = option + picker.unit;
-        select.appendChild(node);
-      });
-      select.dataset.grid = signature;
-    }
-    select.value = String(value);
+  }
+
+  function updateFades(picker) {
+    const list = el[picker.list];
+    const panel = el[picker.panel];
+    panel.classList.toggle("can-up", list.scrollTop > 2);
+    panel.classList.toggle("can-down",
+      list.scrollTop < list.scrollHeight - list.clientHeight - 2);
+  }
+
+  function closePicker() {
+    if (!openPicker) return;
+    el[openPicker.panel].hidden = true;
+    el[openPicker.button].setAttribute("aria-expanded", "false");
+    openPicker = null;
+  }
+
+  function choose(picker, value) {
+    el[picker.range].value = String(value);
+    closePicker();
+    renderDials();
+  }
+
+  function showPicker(picker) {
+    const wasOpen = openPicker === picker;
+    closePicker();
+    if (wasOpen) return;                       // a second tap puts it away
+
+    const list = el[picker.list];
+    const values = pickerValues(picker);
+    const current = Number(el[picker.range].value);
+    list.textContent = "";
+    values.forEach((value) => {
+      const item = document.createElement("div");
+      item.className = "picker-item";
+      item.setAttribute("role", "option");
+      item.setAttribute("aria-selected", String(value === current));
+      item.textContent = value + picker.unit;
+      item.addEventListener("click", () => choose(picker, value));
+      list.appendChild(item);
+    });
+
+    el[picker.panel].hidden = false;
+    el[picker.button].setAttribute("aria-expanded", "true");
+    openPicker = picker;
+    // The padding above the first row means this offset lands the chosen value in
+    // the middle of the window, with its neighbours either side.
+    list.scrollTop = values.indexOf(current) * ITEM_HEIGHT;
+    updateFades(picker);
   }
 
   function buildPickers() {
     PICKERS.forEach((picker) => {
-      syncPicker(picker);
-      ["input", "change"].forEach((type) => {
-        el[picker.select].addEventListener(type, () => {
-          el[picker.range].value = el[picker.select].value;
-          renderDials();
-        });
+      el[picker.button].addEventListener("click", (event) => {
+        event.stopPropagation();
+        showPicker(picker);
       });
+      el[picker.list].addEventListener("scroll", () => updateFades(picker));
+      el[picker.panel].addEventListener("click", (event) => event.stopPropagation());
+    });
+
+    document.addEventListener("click", closePicker);
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || !openPicker) return;
+      const button = el[openPicker.button];
+      closePicker();
+      button.focus();
     });
   }
 
   function renderDials() {
     const { first, sit } = settings();
     PICKERS.forEach((picker) => {
-      // Not while its own wheel is open: rebuilding the options underneath a
-      // picker the user is scrolling would close it.
-      if (document.activeElement !== el[picker.select]) syncPicker(picker);
+      el[picker.button].textContent = el[picker.range].value + picker.unit;
     });
     // The button names what pressing it actually starts. With settling time on the
     // clock the first thing that happens is settling, not the sit.
@@ -1103,7 +1231,7 @@
     releaseScreen();
 
     el.sit.dataset.phase = "idle";
-    el.note.textContent = outcome === "complete" ? "Sit complete" : "Settle, then begin";
+    el.note.innerHTML = outcome === "complete" ? "Sit complete" : "Settle<br>then begin";
     el.start.hidden = false;
     el.cancel.hidden = true;
     setSettleFade("600ms");

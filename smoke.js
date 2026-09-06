@@ -3,10 +3,16 @@
 // tick/loop/finish, which threw at wiring time and left the page with no voices,
 // no pickers and unpositioned rings -- all of it invisible to a syntax check.
 const nodes = {};
+// The stub does not parse the markup, so the state-holding inputs are seeded the
+// way index.html declares them -- otherwise every value derived from them is empty
+// and the assertions test nothing.
+const SEED = { "rng-first": "10", "rng-sit": "20" };
+
 function make(id) {
   const el = {
     id, style: {}, dataset: {}, children: [], attrs: {},
-    textContent: "", innerHTML: "", value: "", hidden: false, min: "0", max: "60",
+    textContent: "", innerHTML: "", value: SEED[id] ?? "", hidden: false,
+    min: id === "rng-sit" ? "1" : "0", max: id === "rng-first" ? "59" : "60",
     classList: { add(){}, remove(){}, contains(){ return false; } },
     setAttribute(k, v){ this.attrs[k] = v; }, getAttribute(k){ return this.attrs[k] ?? null; },
     addEventListener(t){ (this.listeners ||= []).push(t); }, removeEventListener(){},
@@ -55,10 +61,10 @@ check("voice labels are Bowl/Chime/Custom",
       voices && voices.children.map(c => c.textContent).join(",") === "Bowl,Chime,Custom",
       voices && voices.children.map(c => c.textContent).join(","));
 
-for (const id of ["sel-first", "sel-sit"]) {
-  const sel = nodes[id];
-  check(`${id} has a full picker list`, sel && sel.children.length >= 12,
-        `got ${sel ? sel.children.length : "no element"}`);
+for (const id of ["pick-first", "pick-sit"]) {
+  const b = nodes[id];
+  check(`${id} shows a value`, b && /\d/.test(b.textContent), `text=${b && b.textContent}`);
+  check(`${id} opens on click`, b && (b.listeners || []).includes("click"));
 }
 
 for (const id of ["grip-sit", "grip-first", "halo-sit", "halo-first"]) {
