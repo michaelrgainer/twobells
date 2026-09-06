@@ -523,14 +523,21 @@
 
   <div class="log" id="log" aria-live="polite">No sits recorded yet</div>
 
-  <span class="pick-wrap" id="prune" hidden>
+  <div class="log-tools">
+    <span class="pick-wrap" id="prune" hidden>
     <button type="button" class="prune" id="pick-keep" aria-haspopup="listbox"
             aria-expanded="false">Keep last&hellip;</button>
     <div class="picker" id="picker-keep" hidden>
       <div class="picker-list" id="list-keep" role="listbox"></div>
       <div class="fade fade-top"></div><div class="fade fade-bottom"></div>
-    </div>
-  </span>
+      </div>
+    </span>
+
+    <!-- Turns up once the practice has: ten sits in, someone is using this, and a
+         way to say so costs one line. -->
+    <a class="prune" id="contact" hidden
+       href="mailto:michael.r.gainer@gmail.com?subject=Two%20Bells">Contact</a>
+  </div>
 </main>
 
 <script>
@@ -562,6 +569,7 @@
     listFirst: document.getElementById("list-first"),
     listSit: document.getElementById("list-sit"),
     prune: document.getElementById("prune"),
+    contact: document.getElementById("contact"),
     pickKeep: document.getElementById("pick-keep"),
     pickerKeep: document.getElementById("picker-keep"),
     listKeep: document.getElementById("list-keep"),
@@ -1337,6 +1345,7 @@
   // Six or more before the housekeeping appears: below that, scrolling past the
   // whole log is less work than pruning it.
   const PRUNE_FROM = 6;
+  const CONTACT_FROM = 10;
   let pendingKeep = null;
 
   function armPrune(keep) {
@@ -1366,6 +1375,7 @@
 
   function renderPruneControl() {
     el.prune.hidden = history.length < PRUNE_FROM;
+    el.contact.hidden = history.length < CONTACT_FROM;
     if (pendingKeep === null) {
       el.pickKeep.textContent = "Keep last\u2026";
       el.pickKeep.classList.remove("armed");
