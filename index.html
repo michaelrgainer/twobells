@@ -1538,6 +1538,20 @@
   // Read at render time, so a tab left open crosses the date on its own.
   const BETA_UNTIL = Date.parse("2026-09-20T23:59:59");
   const contactFrom = () => (Date.now() < BETA_UNTIL ? 5 : 10);
+
+  // Copy and Contact are earned by practice, not by the length of the list at
+  // this instant. Pruning tidies the log; it does not undo the sitting, and
+  // having them disappear because someone kept the last three is a surprise.
+  const SEEN_KEY = "two-bells:seen";
+
+  function sitsEver() {
+    try { return Number(localStorage.getItem(SEEN_KEY)) || 0; } catch (_) { return 0; }
+  }
+
+  function markSitsEver() {
+    if (history.length <= sitsEver()) return;
+    try { localStorage.setItem(SEEN_KEY, String(history.length)); } catch (_) {}
+  }
   let pendingKeep = null;
 
   function armPrune(keep) {
@@ -1566,9 +1580,12 @@
   }
 
   function renderPruneControl() {
+    const ever = sitsEver();
+    // Only this one asks about the list as it stands: with a short list there is
+    // nothing worth pruning, however much practice is behind it.
     el.prune.hidden = history.length < PRUNE_FROM;
-    el.contact.hidden = history.length < contactFrom();
-    el.copy.hidden = history.length < PRUNE_FROM;
+    el.contact.hidden = ever < contactFrom();
+    el.copy.hidden = ever < PRUNE_FROM;
     if (pendingKeep === null) {
       el.pickKeep.textContent = "Keep last\u2026";
       el.pickKeep.classList.remove("armed");
@@ -1614,6 +1631,7 @@
   }
 
   function renderLog() {
+    markSitsEver();
     renderPruneControl();
     if (!history.length) {
       el.log.innerHTML = "No sits recorded yet";
