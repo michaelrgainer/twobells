@@ -453,9 +453,13 @@
       partials: [[0.5, 0.30], [1, 0.40], [1.2, 0.22], [1.5, 0.14], [2, 0.10]] },
     { id: "handpan", label: "Handpan",   damping: 1.15,
       partials: [[1, 0.45], [2, 0.22], [3, 0.10]] },
-    { id: "vibe",    label: "Vibraphone", damping: 1.25,
-      partials: [[1, 0.45], [4, 0.16], [10, 0.05]] },
-    { id: "marimba", label: "Marimba",   damping: 1.60,
+    // Vibraphone was here at 1:4:10 and was indistinguishable from this: the two
+    // instruments differ by material and resonators, which none of this models.
+    // Marimba is the one worth keeping -- it is the only body in the set that is
+    // not metal or glass, so it earns its place by contrast. Wood damps hard and
+    // its identity is mostly in the thump of mallet on bar, hence the low, loud
+    // transient and the steep damping.
+    { id: "marimba", label: "Marimba",   damping: 2.10, hit: 1.9, hitBand: 3.0,
       partials: [[1, 0.50], [4, 0.14], [9.2, 0.04]] },
     { id: "glass",   label: "Glass",     damping: 1.40,
       partials: [[1, 0.42], [2.32, 0.08], [4.20, 0.03]] },
@@ -477,7 +481,8 @@
       // The body sets the relative decay rates; Brightness leans on them.
       damping: body.damping - b * 0.35,
       detune: (custom.shimmer / 100) * 0.006,
-      strike: 0.14 + b * 0.30,
+      strike: (0.14 + b * 0.30) * (body.hit || 1),
+      hitBand: body.hitBand || 7,
       bright: 0.55 + b * 0.9,
       // The body's own ratios, with Brightness scaling everything above the
       // fundamental. The fundamental itself is left alone so the pitch holds.
@@ -547,7 +552,7 @@
     const hitGain = audio.createGain();
     hit.buffer = noiseBuffer;
     band.type = "bandpass";
-    band.frequency.value = root * 7;
+    band.frequency.value = root * (voice.hitBand || 7);
     band.Q.value = 1.2;
     hitGain.gain.setValueAtTime(voice.strike * 0.25, now);
     hitGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
