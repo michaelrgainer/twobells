@@ -253,10 +253,10 @@
   .handle-settle { fill: var(--ring-soft); }
 
   /* Once the first bell has rung the settle ring has nothing left to say, so it
-     goes rather than sitting there empty. Five seconds, linear: it begins on the
-     bell and dissolves evenly, which is worth watching the first few times and
-     invisible thereafter, by which point nobody is looking at the screen.
-     (prefers-reduced-motion collapses every transition here to 1ms.) */
+     goes rather than sitting there empty. The duration here is only a fallback:
+     it is set from JS to the bell's own decay, so the ring and the sound die
+     together. (prefers-reduced-motion still collapses it -- an !important in a
+     stylesheet beats an inline declaration.) */
   .track-settle, .arc-settle { transition: opacity 5s linear; }
   .sit[data-phase="sitting"] .track-settle,
   .sit[data-phase="sitting"] .arc-settle { opacity: 0; }
@@ -399,6 +399,7 @@
     sit: document.getElementById("sit"),
     rings: document.getElementById("rings"),
     arcFirst: document.getElementById("arc-first"),
+    trackSettle: document.querySelector(".track-settle"),
     arcSit: document.getElementById("arc-sit"),
     gripFirst: document.getElementById("grip-first"),
     gripSit: document.getElementById("grip-sit"),
@@ -428,6 +429,11 @@
     dial.circumference = 2 * Math.PI * dial.radius;
     el[dial.arc].style.strokeDasharray = String(dial.circumference);
   });
+
+  function setSettleFade(duration) {
+    el.arcFirst.style.transitionDuration = duration;
+    el.trackSettle.style.transitionDuration = duration;
+  }
 
   function paintDial(dial, units) {
     const fraction = Math.max(0, Math.min(1, units / RING_UNITS));
@@ -897,6 +903,9 @@
     if (!session.rang && now >= session.bellAt) {
       session.rang = true;
       strike("first");
+      // The ring goes out with the bell: the fundamental rings for exactly
+      // voice.decay seconds, so that is how long the settle ring takes to fade.
+      setSettleFade(voice.decay + "s");
       el.sit.dataset.phase = "sitting";
       el.note.textContent = "";
     }
@@ -941,6 +950,7 @@
     el.note.textContent = outcome === "complete" ? "Sit complete" : "Settle, then begin";
     el.start.hidden = false;
     el.cancel.hidden = true;
+    setSettleFade("600ms");
     renderDials();
 
     save(record);
