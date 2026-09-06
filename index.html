@@ -1531,7 +1531,13 @@
   // Six or more before the housekeeping appears: below that, scrolling past the
   // whole log is less work than pruning it.
   const PRUNE_FROM = 6;
-  const CONTACT_FROM = 10;
+
+  // Ten sits before Contact appears: by then someone is using this, and until
+  // then it is a stranger asking to be written to. During the beta it is five,
+  // because the people trying it were asked to and their notes are the point.
+  // Read at render time, so a tab left open crosses the date on its own.
+  const BETA_UNTIL = Date.parse("2026-09-20T23:59:59");
+  const contactFrom = () => (Date.now() < BETA_UNTIL ? 5 : 10);
   let pendingKeep = null;
 
   function armPrune(keep) {
@@ -1561,7 +1567,7 @@
 
   function renderPruneControl() {
     el.prune.hidden = history.length < PRUNE_FROM;
-    el.contact.hidden = history.length < CONTACT_FROM;
+    el.contact.hidden = history.length < contactFrom();
     el.copy.hidden = history.length < PRUNE_FROM;
     if (pendingKeep === null) {
       el.pickKeep.textContent = "Keep last\u2026";
