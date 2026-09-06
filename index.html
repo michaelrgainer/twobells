@@ -226,6 +226,15 @@
 
   .picker[hidden] { display: none; }
 
+  /* The keep-list sits at the foot of the page, where a picker centred on its
+     button hangs off the bottom edge and grows the document. It opens upward
+     over the log instead, the way a dropdown near a window edge does. */
+  #picker-keep {
+    top: auto;
+    bottom: calc(100% + 10px);
+    transform: translateX(-50%);
+  }
+
   .picker-list {
     height: 100%;
     overflow-y: auto;
@@ -616,6 +625,8 @@
     <button class="btn btn-cancel" id="cancel" hidden>End Now</button>
   </div>
 
+  <div class="log" id="log" aria-live="polite">No sits recorded yet</div>
+
   <div class="log-tools">
     <span class="pick-wrap" id="prune" hidden>
     <button type="button" class="prune" id="pick-keep" aria-haspopup="listbox"
@@ -633,7 +644,6 @@
     <a class="prune" id="contact" hidden
        href="mailto:michael.r.gainer@gmail.com?subject=Two%20Bells">Contact</a>
   </div>
-    <div class="log" id="log" aria-live="polite">No sits recorded yet</div>
 </main>
 
 <script>
