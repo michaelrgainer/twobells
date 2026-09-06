@@ -439,7 +439,68 @@
     text-align: center;
     min-height: 1.4em;
     font-variant-numeric: tabular-nums;
+    /* However long the practice gets, the page does not: the list scrolls in its
+       own box rather than pushing the rings off screen. */
+    width: 100%;
+    max-height: 32vh;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    /* The log is data. It stays selectable even though the rest of the surface
+       is not, so it can be dragged out by hand as well as copied by the button. */
+    -webkit-user-select: text;
+    user-select: text;
   }
+
+  /* Two columns, not one sentence: as a single run of text a row fills the width
+     and wraps, and a wrapped row reads as two entries. */
+  .sit-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    padding: 3px 0;
+    text-align: left;
+  }
+
+  .sit-row + .sit-row { border-top: 1px solid var(--hairline); }
+  .sit-when, .sit-len { white-space: nowrap; }
+
+  /* Struck through before anything is deleted, so the confirming tap agrees to
+     something already visible rather than to a number in a sentence. */
+  .sit-row.doomed { opacity: 0.4; text-decoration: line-through; }
+
+  .log-tools {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 8px 20px;
+    transition: opacity 700ms ease;
+  }
+
+  #prune[hidden], #contact[hidden], #copy[hidden] { display: none; }
+
+  .prune {
+    font-family: var(--ui);
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    background: transparent;
+    border: none;
+    border-bottom: 1px dotted currentColor;
+    border-radius: 0;
+    padding: 2px 0 1px;
+    color: var(--muted);
+    cursor: pointer;
+    transition: color 160ms ease;
+  }
+
+  a.prune { text-decoration: none; }
+  .prune:hover { color: var(--text); }
+  .prune.armed { color: var(--rose); }
+
+  .sit:not([data-phase="idle"]) .log-tools { opacity: 0; pointer-events: none; }
 
   .log em { font-style: italic; color: var(--rose); }
   .log b { font-weight: 400; color: var(--text); }
@@ -525,8 +586,6 @@
     <button class="btn btn-cancel" id="cancel" hidden>End early</button>
   </div>
 
-  <div class="log" id="log" aria-live="polite">No sits recorded yet</div>
-
   <div class="log-tools">
     <span class="pick-wrap" id="prune" hidden>
     <button type="button" class="prune" id="pick-keep" aria-haspopup="listbox"
@@ -539,9 +598,12 @@
 
     <!-- Turns up once the practice has: ten sits in, someone is using this, and a
          way to say so costs one line. -->
+    <button type="button" class="prune" id="copy" hidden>Copy</button>
+
     <a class="prune" id="contact" hidden
        href="mailto:michael.r.gainer@gmail.com?subject=Two%20Bells">Contact</a>
   </div>
+    <div class="log" id="log" aria-live="polite">No sits recorded yet</div>
 </main>
 
 <script>
@@ -574,6 +636,7 @@
     listSit: document.getElementById("list-sit"),
     prune: document.getElementById("prune"),
     contact: document.getElementById("contact"),
+    copy: document.getElementById("copy"),
     pickKeep: document.getElementById("pick-keep"),
     pickerKeep: document.getElementById("picker-keep"),
     listKeep: document.getElementById("list-keep"),
@@ -1059,6 +1122,7 @@
       el[picker.panel].addEventListener("click", (event) => event.stopPropagation());
     });
 
+    el.copy.addEventListener("click", (event) => { event.stopPropagation(); copyLog(); });
     document.addEventListener("click", () => { closePicker(); cancelPrune(); });
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape" || !openPicker) return;
@@ -1335,15 +1399,23 @@
     const time = when.toLocaleTimeString(undefined,
       { hour: "2-digit", minute: "2-digit" });
 
+    // Two columns rather than one sentence: when the whole thing is a single run
+    // of text it fills the width and wraps on a phone, and a wrapped log row reads
+    // as two entries.
+    const left = "<span class=\"sit-when\">" + day + " " + time + "</span>";
     if (record.outcome === "complete") {
       const sat = record.sat === undefined ? record.sit : record.sat;
-      const shortened = sat !== record.sit
-        ? " <em>(set " + record.sit + ")</em>" : "";
-      return day + " &middot; " + time + " &middot; <b>" + sat + " min</b>" + shortened;
+      // "12/20 min" rather than "12 min of 20": the long form was the one row that
+      // would not fit a phone, and a log is read in a column where the shape of the
+      // number matters more than the grammar.
+      const len = sat === record.sit
+        ? "<b>" + sat + " min</b>"
+        : "<b>" + sat + "</b>/" + record.sit + " min";
+      return left + "<span class=\"sit-len\">" + len + "</span>";
     }
     const minutes = Math.max(0, Math.round(record.elapsedMs / 60000));
-    return day + " &middot; " + time + " &middot; <em>left at " + minutes +
-           " of " + record.sit + " min</em>";
+    return left + "<span class=\"sit-len\"><em>" + minutes + "/" +
+           record.sit + " min</em></span>";
   }
 
   // Six or more before the housekeeping appears: below that, scrolling past the
@@ -1380,6 +1452,7 @@
   function renderPruneControl() {
     el.prune.hidden = history.length < PRUNE_FROM;
     el.contact.hidden = history.length < CONTACT_FROM;
+    el.copy.hidden = history.length < PRUNE_FROM;
     if (pendingKeep === null) {
       el.pickKeep.textContent = "Keep last\u2026";
       el.pickKeep.classList.remove("armed");
@@ -1388,6 +1461,36 @@
     const going = history.length - pendingKeep;
     el.pickKeep.textContent = "Discard " + going + " older \u2014 tap to confirm";
     el.pickKeep.classList.add("armed");
+  }
+
+  // Tab-separated with an ISO date, which is what a spreadsheet wants: paste lands
+  // in columns, the date sorts and filters as a date, and the two durations are
+  // separate numbers rather than a sentence someone has to unpick.
+  function toTSV() {
+    const rows = history.map((record) => {
+      const when = new Date(record.at);
+      const iso = when.toISOString().slice(0, 10);
+      const clock = String(when.getHours()).padStart(2, "0") + ":" +
+                    String(when.getMinutes()).padStart(2, "0");
+      const sat = record.outcome === "complete"
+        ? (record.sat === undefined ? record.sit : record.sat)
+        : Math.max(0, Math.round(record.elapsedMs / 60000));
+      return [iso, clock, record.first, record.sit, sat, record.outcome].join("\t");
+    });
+    return ["date\ttime\tsettle_sec\tset_min\tsat_min\toutcome"]
+      .concat(rows).join("\n");
+  }
+
+  function copyLog() {
+    const text = toTSV();
+    const done = (label) => {
+      el.copy.textContent = label;
+      setTimeout(() => { el.copy.textContent = "Copy"; }, 1600);
+    };
+    if (!navigator.clipboard) return done("no clipboard");
+    navigator.clipboard.writeText(text)
+      .then(() => done("Copied " + history.length))
+      .catch(() => done("blocked"));
   }
 
   function renderLog() {
@@ -1412,6 +1515,20 @@
       .join("");
   }
 
+  // Union by timestamp, never replacement. The store and this browser each know
+  // sits the other does not -- anything recorded before the store was reachable
+  // lives only here, and anything from another device lives only there. Assigning
+  // one over the other silently discards a practice.
+  function mergeHistory(incoming) {
+    const byTime = new Map();
+    history.concat(incoming || []).forEach((record) => {
+      if (record && record.at) byTime.set(record.at, record);
+    });
+    history = Array.from(byTime.values())
+      .sort((a, b) => String(b.at).localeCompare(String(a.at)))
+      .slice(0, KEEP);
+  }
+
   function loadLocal() {
     try {
       const raw = localStorage.getItem(KEY);
@@ -1425,6 +1542,9 @@
     } catch (_) {
       history = [];
     }
+    // Written straight back under the current key, so a single legacy record stops
+    // being the thing that answers on every future load.
+    if (history.length) persistLocal();
     renderLog();
   }
 
