@@ -1048,6 +1048,7 @@
   // Which ring you grabbed is decided by how far from the centre you touched, so
   // the whole annulus is a target rather than just the eight-pixel grip.
   let dragging = null;
+  let sitDrag = null;
   const LEARNED_KEY = "two-bells:learned";
 
   function markLearned() {
@@ -1077,7 +1078,6 @@
     // Clockwise from twelve, so the value grows the way the arc is drawn.
     let degrees = Math.atan2(point.y, point.x) * 180 / Math.PI + 90;
     if (degrees < 0) degrees += 360;
-    if (session) return shortenSit(degrees);
     const range = el[dial.range];
     const previous = Number(range.value);
     let units = Math.round(degrees / 360 * RING_UNITS);
@@ -1091,26 +1091,39 @@
     renderDials();
   }
 
-  // Dragging the outer tip inward while sitting brings the closing bell forward.
-  // Only inward: overshooting would otherwise silently hand you back time you had
-  // decided not to take, and the whole point is a graceful early finish rather
-  // than an editable clock.
-  function shortenSit(degrees) {
-    const now = Date.now();
-    const asked = Math.round(degrees / 360 * RING_UNITS) * 60000;
-    const remaining = session.endAt - now;
-    if (asked >= remaining) return;            // never extend
-    session.endAt = now + Math.max(0, asked);
+  // Adjusting a running sit is RELATIVE: the grab records where the pointer was and
+  // how much time was left, and only movement from there changes anything. Absolute
+  // was wrong and dangerous -- it set the remaining time to wherever you touched,
+  // so grabbing the tip of a nearly-finished sit (whose tip sits a few degrees from
+  // twelve) rounded to zero and rang the bell on contact. A tap now does nothing,
+  // which is what a tap should do.
+  function angleOf(point) {
+    const degrees = Math.atan2(point.y, point.x) * 180 / Math.PI + 90;
+    return degrees < 0 ? degrees + 360 : degrees;
+  }
+
+  function adjustSit(point) {
+    let delta = angleOf(point) - sitDrag.angle;
+    if (delta > 180) delta -= 360;
+    if (delta < -180) delta += 360;
+    const shifted = sitDrag.endAt + delta / 360 * RING_UNITS * 60000;
+    // Never later than where it started -- this shortens a sit, it does not edit
+    // the clock -- and never earlier than now.
+    session.endAt = Math.max(Date.now(), Math.min(sitDrag.endAt, shifted));
     scheduleBackstops();
     tick();
   }
 
   function onDragMove(event) {
-    if (dragging) setFromPoint(dragging, ringPoint(event));
+    if (!dragging) return;
+    const point = ringPoint(event);
+    if (sitDrag) adjustSit(point);
+    else setFromPoint(dragging, point);
   }
 
   function endDrag() {
     dragging = null;
+    sitDrag = null;
     window.removeEventListener("pointermove", onDragMove);
     window.removeEventListener("pointerup", endDrag);
     window.removeEventListener("pointercancel", endDrag);
@@ -1136,7 +1149,12 @@
     window.addEventListener("pointerup", endDrag);
     window.addEventListener("pointercancel", endDrag);
     markLearned();
-    setFromPoint(dial, point);
+    if (session) {
+      // Nothing happens on contact; only on movement away from here.
+      sitDrag = { angle: angleOf(point), endAt: session.endAt };
+    } else {
+      setFromPoint(dial, point);
+    }
   });
 
   function begin() {
@@ -1225,6 +1243,10 @@
       outcome,
     };
 
+    // Nothing sat, nothing to record. Walking away during the settle is changing
+    // your mind about starting, and a practice log full of those is noise.
+    const worthKeeping = session.rang;
+
     session = null;
     if (frame) cancelAnimationFrame(frame);
     while (backstops.length) clearTimeout(backstops.pop());
@@ -1237,19 +1259,27 @@
     setSettleFade("600ms");
     renderDials();
 
-    save(record);
-    showLatest(record);
+    if (worthKeeping) {
+      save(record);
+      history.unshift(record);
+      renderLog();
+    }
   }
 
   // ── the practice log ────────────────────────────────────────────────────
   // Kept in the artifact's own store when it is reachable, so the log follows
   // between phone and laptop and survives clearing site data; localStorage
   // holds the same record for when it is not.
-  const KEY = "two-bells:last";
+  const KEY = "two-bells:log";
+  const LEGACY_KEY = "two-bells:last";
+  const KEEP = 200;
   let store = null;
+  let history = [];
 
   function save(record) {
-    try { localStorage.setItem(KEY, JSON.stringify(record)); } catch (_) {}
+    try {
+      localStorage.setItem(KEY, JSON.stringify(history.slice(0, KEEP)));
+    } catch (_) {}
     if (store) {
       store.doc("sits/" + record.at.replace(/[:.]/g, "-"))
            .set(record).catch(() => {});
@@ -1274,15 +1304,36 @@
            " of " + record.sit + " min</em>";
   }
 
-  function showLatest(record) {
-    el.log.innerHTML = record ? describe(record) : "No sits recorded yet";
+  function renderLog() {
+    if (!history.length) {
+      el.log.innerHTML = "No sits recorded yet";
+      return;
+    }
+    // Sorted here rather than trusting the order it arrived in: the store, this
+    // browser's copy, and a record just unshifted on all agree today, and a render
+    // that depends on all three continuing to agree is one that will eventually
+    // show someone their practice backwards.
+    el.log.innerHTML = history
+      .slice()
+      .sort((a, b) => String(b.at).localeCompare(String(a.at)))
+      .map((record) => "<div class=\"sit-row\">" + describe(record) + "</div>")
+      .join("");
   }
 
   function loadLocal() {
     try {
       const raw = localStorage.getItem(KEY);
-      if (raw) showLatest(JSON.parse(raw));
-    } catch (_) {}
+      if (raw) {
+        history = JSON.parse(raw) || [];
+      } else {
+        // One record under the old key, from before this kept a list.
+        const legacy = localStorage.getItem(LEGACY_KEY);
+        if (legacy) history = [JSON.parse(legacy)];
+      }
+    } catch (_) {
+      history = [];
+    }
+    renderLog();
   }
 
   // ── wiring ──────────────────────────────────────────────────────────────
@@ -1312,8 +1363,14 @@
     window.claude.use("db").then((db) => {
       if (!db) return;
       store = db;
-      db.collection("sits").orderBy("at", "desc").limit(1).get()
-        .then((snap) => { if (!snap.empty) showLatest(snap.docs[0].data()); })
+      db.collection("sits").orderBy("at", "desc").limit(KEEP).get()
+        .then((snap) => {
+          if (snap.empty) return;
+          // The store is the fuller record: it follows between devices, where
+          // localStorage only ever remembers this one browser.
+          history = snap.docs.map((doc) => doc.data());
+          renderLog();
+        })
         .catch(() => {});
     }).catch(() => {});
   }
