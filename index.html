@@ -508,11 +508,13 @@
   /* Once a sit is running, nothing else on the page can do anything, so nothing
      else on the page is there. All the way to zero rather than dimmed: a ghost of
      a control still reads as something you might be able to use. */
+  /* The wordmark stays. It is not a control, so it is not one of the things that
+     goes quiet when nothing on the page can be pressed -- and a black rectangle
+     with one ring on it reads better as something with a name at the top. */
   .sit:not([data-phase="idle"]) .legend,
   .sit:not([data-phase="idle"]) .tune,
   .sit:not([data-phase="idle"]) .voices,
-  .sit:not([data-phase="idle"]) .log,
-  .sit:not([data-phase="idle"]) .wordmark { opacity: 0; pointer-events: none; }
+  .sit:not([data-phase="idle"]) .log { opacity: 0; pointer-events: none; }
 
   :focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
 
