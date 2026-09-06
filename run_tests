@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Everything, in the order that fails fastest.
+#
+#   ./run_tests            node tier, then the browser tier if chromectl is built
+#   ./run_tests --quick    node tier only (milliseconds)
+#
+# chromectl lives in the analysis_and_visualization checkout and is not vendored
+# here; set CHROMECTL to point somewhere else. Without it the browser tier skips
+# itself, which is the right answer for anyone who just cloned this repo.
+set -uo pipefail
+cd "$(dirname "$0")"
+
+node --test test_smoke.js test_logic.js || exit 1
+[[ "${1:-}" == "--quick" ]] && exit 0
+
+exec node --test test_browser.js

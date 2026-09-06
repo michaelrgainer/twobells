@@ -586,7 +586,7 @@
        the boundary, so neither end can be reached by accident from the other.
        0 is a sensible settle (begin at once) and never a sensible sit, so the
        floors differ. -->
-  <input class="sr" type="range" id="rng-first" min="0" max="59" step="1" value="10"
+  <input class="sr" type="range" id="rng-first" min="0" max="59" step="1" value="40"
          tabindex="-1" aria-hidden="true">
   <input class="sr" type="range" id="rng-sit" min="1" max="60" step="1" value="20"
          tabindex="-1" aria-hidden="true">
@@ -1064,7 +1064,7 @@
   const backstops = [];
 
   const SETTLE_NOTE = "Settle<br>then begin";
-  const NOTE_LINGER_MS = 30000;
+  let noteLingerMs = 30000;
   let noteTimer = null;
 
   // Every change to the wording goes through here, so a fade left over from the
@@ -1084,7 +1084,7 @@
       const fade = parseFloat(getComputedStyle(el.sit).getPropertyValue("--note-fade"));
       el.note.style.opacity = "0";
       noteTimer = setTimeout(() => setNote(SETTLE_NOTE), fade || 0);
-    }, NOTE_LINGER_MS);
+    }, noteLingerMs);
   }
 
   function settings() {
@@ -1797,6 +1797,7 @@
     // The pure parts, so the node tier can test the arithmetic without a browser.
     internals: {
       minutesSat, describe, toTSV, mergeHistory, readTotals, raiseTotals,
+      setNoteLinger: (ms) => { noteLingerMs = ms; },
       contactFrom, isQuotaError, persistLocal, loadLocal,
       getHistory: () => history,
       setHistory: (records) => { history = records; },
