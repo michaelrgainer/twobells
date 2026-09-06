@@ -109,6 +109,29 @@
 
   .tune[hidden] { display: none; }
 
+  .timbres {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .timbre {
+    font-family: var(--ui);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 7px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--hairline);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    transition: color 160ms ease, border-color 160ms ease;
+  }
+
+  .timbre:hover { color: var(--text); border-color: var(--ring-dim); }
+  .timbre[aria-pressed="true"] { color: var(--ring); border-color: var(--ring-dim); }
+
   .tune-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; }
 
   .tune-row .slider { grid-column: 1 / -1; }
@@ -410,38 +433,56 @@
     { key: "ring",    label: "Ring",       min: 2,   max: 14,  step: 0.5, unit: "s" },
     { key: "bright",  label: "Brightness", min: 0,   max: 100, step: 1,   unit: "" },
     { key: "shimmer", label: "Shimmer",    min: 0,   max: 100, step: 1,   unit: "" },
-    { key: "metallic", label: "Metallic",   min: 0,   max: 100, step: 1,   unit: "" },
   ];
 
-  // Metallic is inharmonicity, which is the whole difference between the two
-  // families: a struck string rings at whole-number multiples of its fundamental,
-  // a struck bell does not. At 0 the partials land on 2, 3, 4 and it reads as a
-  // piano; at 100 they land where a bowl's actually sit.
-  const HARMONIC = [2, 3, 4];
-  const INHARMONIC = [2.68, 5.15, 8.40];
+  // Bodies, not a blend of two of them. Interpolating partial ratios walks a
+  // straight line through ratios no physical object has -- 1 : 2.34 : 4.08 is not
+  // halfway between a bowl and a string, it is a thing that does not exist, and it
+  // sounds like it. Each of these is one real instrument's mode series.
+  //
+  // Confidence varies. The church bell (hum, prime, tierce, quint, nominal) and
+  // the free-free bar the tubular bell uses are textbook. Vibraphone and marimba
+  // bars are tuned to the cited 1:4:10 and 1:4:9.2. Bowl and glass vary a lot by
+  // object, so those two are representative rather than definitive.
+  const TIMBRES = [
+    { id: "bowl",    label: "Bowl",      damping: 0.95,
+      partials: [[1, 0.50], [2.68, 0.20], [5.15, 0.09], [8.40, 0.04]] },
+    { id: "tubular", label: "Tubular",   damping: 1.05,
+      partials: [[1, 0.38], [2.76, 0.16], [5.40, 0.07], [8.93, 0.03]] },
+    { id: "church",  label: "Church",    damping: 1.10,
+      partials: [[0.5, 0.30], [1, 0.40], [1.2, 0.22], [1.5, 0.14], [2, 0.10]] },
+    { id: "handpan", label: "Handpan",   damping: 1.15,
+      partials: [[1, 0.45], [2, 0.22], [3, 0.10]] },
+    { id: "vibe",    label: "Vibraphone", damping: 1.25,
+      partials: [[1, 0.45], [4, 0.16], [10, 0.05]] },
+    { id: "marimba", label: "Marimba",   damping: 1.60,
+      partials: [[1, 0.50], [4, 0.14], [9.2, 0.04]] },
+    { id: "glass",   label: "Glass",     damping: 1.40,
+      partials: [[1, 0.42], [2.32, 0.08], [4.20, 0.03]] },
+    { id: "string",  label: "String",    damping: 1.30,
+      partials: [[1, 0.44], [2, 0.20], [3, 0.11], [4, 0.06], [5, 0.03]] },
+  ];
 
   const CUSTOM_KEY = "two-bells:custom";
-  let custom = { pitch: 210, ring: 8, bright: 50, shimmer: 35, metallic: 100 };
+  let custom = { pitch: 210, ring: 8, bright: 50, shimmer: 35, timbre: "bowl" };
 
   function customVoice() {
     const b = custom.bright / 100;
-    const m = custom.metallic / 100;
-    const ratio = (i) => HARMONIC[i] + m * (INHARMONIC[i] - HARMONIC[i]);
+    const body = TIMBRES.find((t) => t.id === custom.timbre) || TIMBRES[0];
     return {
       id: "custom", label: "Custom",
       first: custom.pitch,
       close: Math.round(custom.pitch * 0.71),   // a fifth down, as the presets are
       decay: custom.ring,
-      damping: 1.25 - b * 0.45,                 // brighter lets the uppers live longer
+      // The body sets the relative decay rates; Brightness leans on them.
+      damping: body.damping - b * 0.35,
       detune: (custom.shimmer / 100) * 0.006,
       strike: 0.14 + b * 0.30,
       bright: 0.55 + b * 0.9,
-      partials: [
-        [1,          0.50],
-        [ratio(0),   0.10 + b * 0.20],
-        [ratio(1),   0.03 + b * 0.12],
-        [ratio(2),   0.01 + b * 0.07],
-      ],
+      // The body's own ratios, with Brightness scaling everything above the
+      // fundamental. The fundamental itself is left alone so the pitch holds.
+      partials: body.partials.map(([ratio, level], i) =>
+        [ratio, i === 0 ? level : level * (0.35 + b * 1.3)]),
     };
   }
 
@@ -559,6 +600,42 @@
   }
 
   function buildTune() {
+    // The body first, then the shaping: picking an instrument is a different kind
+    // of choice from nudging its brightness, so it gets a different control.
+    const bodyRow = document.createElement("div");
+    bodyRow.className = "tune-row";
+    const bodyLabel = document.createElement("span");
+    bodyLabel.className = "dial-label";
+    bodyLabel.textContent = "Body";
+    const picker = document.createElement("div");
+    picker.className = "timbres";
+    picker.setAttribute("role", "group");
+    picker.setAttribute("aria-label", "Body");
+
+    TIMBRES.forEach((body) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "timbre";
+      button.dataset.timbre = body.id;
+      button.textContent = body.label;
+      button.setAttribute("aria-pressed", String(body.id === custom.timbre));
+      button.addEventListener("click", () => {
+        custom.timbre = body.id;
+        picker.querySelectorAll(".timbre").forEach((other) => {
+          other.setAttribute("aria-pressed", String(other.dataset.timbre === body.id));
+        });
+        voice = customVoice();
+        try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom)); } catch (_) {}
+        unlockAudio();
+        strike("first");
+      });
+      picker.appendChild(button);
+    });
+
+    bodyRow.append(bodyLabel, picker);
+    bodyRow.querySelector(".timbres").style.gridColumn = "1 / -1";
+    el.tune.appendChild(bodyRow);
+
     MACROS.forEach((macro) => {
       const row = document.createElement("div");
       row.className = "tune-row";
