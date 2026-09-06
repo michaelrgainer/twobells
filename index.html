@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#08090b">
+<meta name="description" content="A meditation timer: two bells, an unwinding ring, and a one-line practice log.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='11' fill='none' stroke='%23f0b429' stroke-width='3'/></svg>">
+<!-- Standalone: added to the page for static hosting. Add to Home Screen works
+     from here; the artifact copy omits this block because its host supplies it. -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<title>Two Bells</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300&family=IBM+Plex+Sans:wght@300;400;500&display=swap">
+<style>
+  :root {
+    --ground:    #08090b;
+    --ring:      #f0b429;
+    --ring-dim:  #6b5220;
+    --track:     #191c21;
+    --text:      #ece5d8;
+    --muted:     #767d88;
+    --rose:      #b4695c;
+    --hairline:  #14171c;
+
+    --display: "Cormorant Garamond", "Iowan Old Style", Georgia, serif;
+    --ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+
+  /* Committed to one visual world: a timer used in a dark room. Every colour is
+     painted explicitly so the page holds on whatever ground the viewer paints. */
+  body {
+    background: var(--ground);
+    color: var(--text);
+    font-family: var(--ui);
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 20px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .sit {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 30px;
+    width: 100%;
+    max-width: 380px;
+  }
+
+  .wordmark {
+    font-family: var(--display);
+    font-size: 26px;
+    font-weight: 300;
+    letter-spacing: 0.10em;
+    color: var(--muted);
+    transition: opacity 700ms ease;
+  }
+
+  .voices {
+    display: flex;
+    gap: 8px;
+    transition: opacity 700ms ease;
+  }
+
+  .voice {
+    font-family: var(--ui);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    padding: 9px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--hairline);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    transition: color 160ms ease, border-color 160ms ease;
+  }
+
+  .voice:hover { color: var(--text); border-color: var(--ring-dim); }
+
+  .voice[aria-pressed="true"] {
+    color: var(--ring);
+    border-color: var(--ring-dim);
+  }
+
+  /* ── the dials ─────────────────────────────────────────────────────────── */
+
+  .dials {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    width: 100%;
+    transition: opacity 700ms ease;
+  }
+
+  .dial {
+    display: grid;
+    grid-template-columns: 1fr auto auto auto;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .dial-label {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .dial-value {
+    font-size: 19px;
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    min-width: 4.4ch;
+    text-align: right;
+  }
+
+  .dial-value small {
+    font-size: 12px;
+    color: var(--muted);
+    margin-left: 3px;
+  }
+
+  .step {
+    width: 38px;
+    height: 38px;
+    border: 1px solid var(--hairline);
+    border-radius: 50%;
+    background: transparent;
+    color: var(--muted);
+    font-family: var(--ui);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    transition: color 160ms ease, border-color 160ms ease;
+  }
+
+  .step:hover:not(:disabled) { color: var(--text); border-color: var(--ring-dim); }
+  .step:disabled { opacity: 0.3; cursor: default; }
+
+  .slider {
+    grid-column: 1 / -1;
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 26px;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .slider::-webkit-slider-runnable-track {
+    height: 2px;
+    background: var(--track);
+  }
+  .slider::-moz-range-track { height: 2px; background: var(--track); }
+
+  .slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    margin-top: -9px;
+    border-radius: 50%;
+    background: var(--ring);
+    border: none;
+  }
+  .slider::-moz-range-thumb {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--ring); border: none;
+  }
+
+  /* ── the ring ──────────────────────────────────────────────────────────── */
+
+  .ring-wrap {
+    position: relative;
+    width: min(66vw, 250px);
+    aspect-ratio: 1;
+  }
+
+  .ring-wrap svg { display: block; width: 100%; height: 100%; }
+
+  .ring-track { fill: none; stroke: var(--track); stroke-width: 6; }
+
+  .ring-arc {
+    fill: none;
+    stroke: var(--ring);
+    stroke-width: 6;
+    stroke-linecap: round;
+  }
+
+  /* The pre-bell wait is a quieter state than the sit itself, so the ring is
+     dimmed rather than given a second colour. */
+  .sit[data-phase="waiting"] .ring-arc { stroke: var(--ring-dim); }
+
+  .ring-centre {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    text-align: center;
+    padding: 0 16%;
+  }
+
+  .ring-note {
+    font-family: var(--display);
+    font-style: italic;
+    font-weight: 300;
+    font-size: 19px;
+    line-height: 1.4;
+    color: var(--muted);
+    transition: opacity 600ms ease;
+  }
+
+  /* ── controls and log ──────────────────────────────────────────────────── */
+
+  .controls { display: flex; gap: 14px; }
+
+  .btn {
+    font-family: var(--ui);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    padding: 15px 40px;
+    border-radius: 999px;
+    border: 1px solid var(--ring);
+    background: transparent;
+    color: var(--ring);
+    cursor: pointer;
+    transition: background 200ms ease, color 200ms ease;
+  }
+
+  .btn:hover { background: var(--ring); color: var(--ground); }
+
+  .btn-cancel { border-color: var(--hairline); color: var(--muted); }
+  .btn-cancel:hover { background: transparent; border-color: var(--rose); color: var(--rose); }
+
+  .btn[hidden] { display: none; }
+
+  .log {
+    font-family: var(--display);
+    font-size: 17px;
+    font-weight: 300;
+    color: var(--muted);
+    text-align: center;
+    min-height: 1.4em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .log em { font-style: italic; color: var(--rose); }
+  .log b { font-weight: 400; color: var(--text); }
+
+  .sit[data-phase="waiting"] .dials,
+  .sit[data-phase="sitting"] .dials,
+  .sit[data-phase="waiting"] .voices,
+  .sit[data-phase="sitting"] .voices,
+  .sit[data-phase="waiting"] .wordmark,
+  .sit[data-phase="sitting"] .wordmark { opacity: 0.12; pointer-events: none; }
+
+  :focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 1ms !important; }
+  }
+</style>
+
+<main class="sit" id="sit" data-phase="idle">
+  <div class="wordmark">Two Bells</div>
+
+  <div class="voices" id="voices" role="group" aria-label="Bell sound"></div>
+
+  <div class="dials" id="dials">
+    <div class="dial">
+      <span class="dial-label" id="lbl-first">First bell</span>
+      <button class="step" data-dial="first" data-delta="-1" aria-label="First bell, one second less">&minus;</button>
+      <span class="dial-value" id="val-first">10<small>s</small></span>
+      <button class="step" data-dial="first" data-delta="1" aria-label="First bell, one second more">+</button>
+      <input class="slider" type="range" id="rng-first" min="0" max="60" step="1" value="10"
+             aria-labelledby="lbl-first">
+    </div>
+
+    <div class="dial">
+      <span class="dial-label" id="lbl-sit">Bell to bell</span>
+      <button class="step" data-dial="sit" data-delta="-1" aria-label="Sit, one minute less">&minus;</button>
+      <span class="dial-value" id="val-sit">20<small>min</small></span>
+      <button class="step" data-dial="sit" data-delta="1" aria-label="Sit, one minute more">+</button>
+      <input class="slider" type="range" id="rng-sit" min="1" max="60" step="1" value="20"
+             aria-labelledby="lbl-sit">
+    </div>
+  </div>
+
+  <div class="ring-wrap">
+    <svg viewBox="0 0 200 200" aria-hidden="true">
+      <circle class="ring-track" cx="100" cy="100" r="92"></circle>
+      <circle class="ring-arc" id="arc" cx="100" cy="100" r="92"
+              transform="rotate(-90 100 100)"></circle>
+    </svg>
+    <div class="ring-centre">
+      <div class="ring-note" id="note">Settle, then begin</div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="btn" id="start">Begin</button>
+    <button class="btn btn-cancel" id="cancel" hidden>End early</button>
+  </div>
+
+  <div class="log" id="log" aria-live="polite">No sits recorded yet</div>
+</main>
+
+<script>
+(() => {
+  "use strict";
+
+  const el = {
+    sit: document.getElementById("sit"),
+    arc: document.getElementById("arc"),
+    note: document.getElementById("note"),
+    start: document.getElementById("start"),
+    cancel: document.getElementById("cancel"),
+    log: document.getElementById("log"),
+    voices: document.getElementById("voices"),
+    rngFirst: document.getElementById("rng-first"),
+    rngSit: document.getElementById("rng-sit"),
+    valFirst: document.getElementById("val-first"),
+    valSit: document.getElementById("val-sit"),
+  };
+
+  const CIRCUMFERENCE = 2 * Math.PI * 92;
+  el.arc.style.strokeDasharray = String(CIRCUMFERENCE);
+  el.arc.style.strokeDashoffset = "0";
+
+  // ── the bell ────────────────────────────────────────────────────────────
+  // Synthesised rather than fetched: an audio file would be a network request
+  // the page's own CSP forbids, and a struck bowl is a handful of inharmonic
+  // partials over a long decay, which is cheaper to generate than to store.
+  let audio = null;
+
+  function unlockAudio() {
+    if (!audio) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      audio = new Ctx();
+    }
+    if (audio.state === "suspended") audio.resume();
+  }
+
+  // Four voices, each a set of partials over a decay. What separates them is
+  // inharmonicity and length: a bowl's partials sit at unmusical ratios and ring
+  // for six seconds; a glass bell is near-harmonic, high, and gone in two.
+  const VOICES = [
+    { id: "bowl",  label: "Bowl",  first: 210, close: 150, decay: 6.5,
+      partials: [[1, 0.50], [2.68, 0.22], [5.15, 0.10], [8.40, 0.05]] },
+    { id: "bell",  label: "Bell",  first: 587, close: 392, decay: 3.4,
+      partials: [[1, 0.40], [2.00, 0.16], [3.01, 0.10], [4.17, 0.06]] },
+    { id: "chime", label: "Chime", first: 440, close: 330, decay: 4.4,
+      partials: [[1, 0.36], [2.76, 0.18], [5.40, 0.10], [8.93, 0.05]] },
+    { id: "glass", label: "Glass", first: 880, close: 660, decay: 2.4,
+      partials: [[1, 0.26], [3.00, 0.14], [5.00, 0.08], [7.00, 0.04]] },
+  ];
+
+  const VOICE_KEY = "two-bells:voice";
+  let voice = VOICES[0];
+
+  function strike(which) {
+    if (!audio) return;
+    const now = audio.currentTime;
+    const root = which === "close" ? voice.close : voice.first;
+    // The closing bell is lower and rings longer than the opening one, in every
+    // voice: it marks the end of the sit rather than the start of it.
+    const seconds = which === "close" ? voice.decay * 1.5 : voice.decay;
+    voice.partials.forEach(([ratio, level]) => {
+      const osc = audio.createOscillator();
+      const gain = audio.createGain();
+      osc.type = "sine";
+      osc.frequency.value = root * ratio;
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(level, now + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + seconds);
+      osc.connect(gain).connect(audio.destination);
+      osc.start(now);
+      osc.stop(now + seconds + 0.1);
+    });
+  }
+
+  function chooseVoice(next, preview) {
+    voice = next;
+    try { localStorage.setItem(VOICE_KEY, next.id); } catch (_) {}
+    el.voices.querySelectorAll(".voice").forEach((b) => {
+      b.setAttribute("aria-pressed", String(b.dataset.voice === next.id));
+    });
+    if (preview) { unlockAudio(); strike("first"); }
+  }
+
+  function buildVoices() {
+    try {
+      const saved = localStorage.getItem(VOICE_KEY);
+      const match = VOICES.find((v) => v.id === saved);
+      if (match) voice = match;
+    } catch (_) {}
+
+    VOICES.forEach((v) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "voice";
+      button.dataset.voice = v.id;
+      button.textContent = v.label;
+      button.setAttribute("aria-pressed", String(v.id === voice.id));
+      button.addEventListener("click", () => chooseVoice(v, true));
+      el.voices.appendChild(button);
+    });
+  }
+
+  // ── keeping the screen alive ────────────────────────────────────────────
+  // A phone that sleeps mid-sit stops the animation frame and can throttle the
+  // timer, so the closing bell arrives late or not at all. The wake lock is the
+  // reliable fix; the elapsed-time check on resume is the fallback for when it
+  // is unavailable or dropped.
+  let wakeLock = null;
+
+  async function holdScreen() {
+    try {
+      if ("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen");
+    } catch (_) { /* unsupported or refused; the resume check covers it */ }
+  }
+
+  function releaseScreen() {
+    if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+  }
+
+  // ── the session ─────────────────────────────────────────────────────────
+  let session = null;
+  let frame = null;
+  const backstops = [];
+
+  function settings() {
+    return { first: Number(el.rngFirst.value), sit: Number(el.rngSit.value) };
+  }
+
+  function renderDials() {
+    const { first, sit } = settings();
+    el.valFirst.innerHTML = first + "<small>s</small>";
+    el.valSit.innerHTML = sit + "<small>min</small>";
+    if (!session) setArc(sit);
+  }
+
+  // Sixty units fill the ring, whether those units are seconds of settling or
+  // minutes of sitting. So the arc is an absolute reading, not a percentage of
+  // whatever was chosen: 45 seconds of prep starts at three quarters, 20 minutes
+  // starts at a third, and the edge travels at one unit per sixtieth of a turn
+  // no matter how the dials are set.
+  const RING_UNITS = 60;
+
+  function setArc(units) {
+    // Unwinds counterclockwise: the arc is drawn clockwise from twelve, so a
+    // growing offset retreats its leading edge back the other way. No ticks and
+    // no digits — the shape of the sit without an invitation to count it down.
+    const clamped = Math.max(0, Math.min(1, units / RING_UNITS));
+    el.arc.style.strokeDashoffset = String(CIRCUMFERENCE * (1 - clamped));
+  }
+
+  function begin() {
+    unlockAudio();
+    holdScreen();
+
+    const { first, sit } = settings();
+    const now = Date.now();
+    session = {
+      first, sit,
+      startedAt: now,
+      bellAt: now + first * 1000,
+      endAt: now + first * 1000 + sit * 60000,
+      rang: false,
+    };
+
+    el.sit.dataset.phase = first > 0 ? "waiting" : "sitting";
+    el.note.textContent = first > 0 ? "Settling" : "";
+    el.start.hidden = true;
+    el.cancel.hidden = false;
+
+    // Absolute deadlines, not accumulated intervals, so a throttled frame loop
+    // cannot make the sit drift longer than it was set for.
+    backstops.push(setTimeout(() => tick(), Math.max(0, session.bellAt - now) + 40));
+    backstops.push(setTimeout(() => tick(), Math.max(0, session.endAt - now) + 40));
+    loop();
+  }
+
+  function tick() {
+    if (!session) return;
+    const now = Date.now();
+
+    if (!session.rang && now >= session.bellAt) {
+      session.rang = true;
+      strike("first");
+      el.sit.dataset.phase = "sitting";
+      el.note.textContent = "";
+    }
+
+    if (now >= session.endAt) {
+      strike("close");
+      finish("complete");
+      return;
+    }
+
+    if (session.rang) {
+      setArc((session.endAt - now) / 60000);     // minutes left, of sixty
+    } else {
+      setArc((session.bellAt - now) / 1000);     // seconds left, of sixty
+    }
+  }
+
+  function loop() {
+    tick();
+    if (session) frame = requestAnimationFrame(loop);
+  }
+
+  function finish(outcome) {
+    if (!session) return;
+    const elapsedMs = Date.now() - session.startedAt;
+    const record = {
+      at: new Date().toISOString(),
+      first: session.first,
+      sit: session.sit,
+      elapsedMs,
+      outcome,
+    };
+
+    session = null;
+    if (frame) cancelAnimationFrame(frame);
+    while (backstops.length) clearTimeout(backstops.pop());
+    releaseScreen();
+
+    el.sit.dataset.phase = "idle";
+    el.note.textContent = outcome === "complete" ? "Sit complete" : "Settle, then begin";
+    el.start.hidden = false;
+    el.cancel.hidden = true;
+    setArc(settings().sit);
+
+    save(record);
+    showLatest(record);
+  }
+
+  // ── the practice log ────────────────────────────────────────────────────
+  // Kept in the artifact's own store when it is reachable, so the log follows
+  // between phone and laptop and survives clearing site data; localStorage
+  // holds the same record for when it is not.
+  const KEY = "two-bells:last";
+  let store = null;
+
+  function save(record) {
+    try { localStorage.setItem(KEY, JSON.stringify(record)); } catch (_) {}
+    if (store) {
+      store.doc("sits/" + record.at.replace(/[:.]/g, "-"))
+           .set(record).catch(() => {});
+    }
+  }
+
+  function describe(record) {
+    const when = new Date(record.at);
+    const day = when.toLocaleDateString(undefined,
+      { weekday: "short", day: "numeric", month: "short" });
+    const time = when.toLocaleTimeString(undefined,
+      { hour: "2-digit", minute: "2-digit" });
+
+    if (record.outcome === "complete") {
+      return day + " &middot; " + time + " &middot; <b>" + record.sit + " min</b>";
+    }
+    const minutes = Math.max(0, Math.round(record.elapsedMs / 60000));
+    return day + " &middot; " + time + " &middot; <em>left at " + minutes +
+           " of " + record.sit + " min</em>";
+  }
+
+  function showLatest(record) {
+    el.log.innerHTML = record ? describe(record) : "No sits recorded yet";
+  }
+
+  function loadLocal() {
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (raw) showLatest(JSON.parse(raw));
+    } catch (_) {}
+  }
+
+  // ── wiring ──────────────────────────────────────────────────────────────
+  el.rngFirst.addEventListener("input", renderDials);
+  el.rngSit.addEventListener("input", renderDials);
+
+  document.querySelectorAll(".step").forEach((button) => {
+    button.addEventListener("click", () => {
+      const range = button.dataset.dial === "first" ? el.rngFirst : el.rngSit;
+      const next = Number(range.value) + Number(button.dataset.delta);
+      range.value = String(Math.max(Number(range.min), Math.min(Number(range.max), next)));
+      renderDials();
+    });
+  });
+
+  el.start.addEventListener("click", begin);
+  el.cancel.addEventListener("click", () => finish("cancelled"));
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible" || !session) return;
+    holdScreen();   // a lock is dropped whenever the page is hidden
+    tick();         // catch up on anything a throttled frame loop missed
+  });
+
+  buildVoices();
+  renderDials();
+  loadLocal();
+
+  if (window.claude && typeof window.claude.use === "function") {
+    window.claude.use("db").then((db) => {
+      if (!db) return;
+      store = db;
+      db.collection("sits").orderBy("at", "desc").limit(1).get()
+        .then((snap) => { if (!snap.empty) showLatest(snap.docs[0].data()); })
+        .catch(() => {});
+    }).catch(() => {});
+  }
+})();
+</script>
+
+</body>
+</html>
