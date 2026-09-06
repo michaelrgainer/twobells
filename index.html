@@ -54,9 +54,14 @@
 
   .sit {
     /* Everything that leaves when the first bell rings leaves over the length of
-       that bell. Set from JS to the voice's own decay, so the page empties at the
-       speed of the sound rather than at a speed someone picked. */
-    --bell-fade: 700ms;
+       that bell -- set from JS to the voice's own decay, so the page empties at
+       the speed of the sound rather than at a speed someone picked.
+
+       This value is only ever the OTHER direction: how quickly the page comes back
+       when a sit ends. Nothing fades between load and the first bell, so it never
+       applies on the way out. It matches the figure finish() restores, because two
+       numbers for one idea is how they end up disagreeing. */
+    --bell-fade: 600ms;
 
     /* An app surface, not a document. Dragging a ring on a desktop otherwise
        starts a text selection and hauls the legend around with the pointer. */
@@ -1406,7 +1411,8 @@
     el.note.innerHTML = outcome === "complete" ? "Sit complete" : "Settle<br>then begin";
     el.start.hidden = false;
     el.cancel.hidden = true;
-    setBellFade("600ms");
+    // Back to the stylesheet's own default rather than a number repeated here.
+    el.sit.style.removeProperty("--bell-fade");
     renderDials();
 
     if (worthKeeping) {
