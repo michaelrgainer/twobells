@@ -1579,9 +1579,13 @@
   function toTSV() {
     const rows = history.map((record) => {
       const when = new Date(record.at);
-      const iso = when.toISOString().slice(0, 10);
-      const clock = String(when.getHours()).padStart(2, "0") + ":" +
-                    String(when.getMinutes()).padStart(2, "0");
+      // Both columns local. Built from the local parts rather than sliced off
+      // toISOString(), which is UTC: an evening sit was landing under the next
+      // day's date beside an evening clock time.
+      const pad = (n) => String(n).padStart(2, "0");
+      const iso = when.getFullYear() + "-" + pad(when.getMonth() + 1) + "-" +
+                  pad(when.getDate());
+      const clock = pad(when.getHours()) + ":" + pad(when.getMinutes());
       const sat = record.outcome === "complete"
         ? (record.sat === undefined ? record.sit : record.sat)
         : Math.max(0, Math.round(record.elapsedMs / 60000));
