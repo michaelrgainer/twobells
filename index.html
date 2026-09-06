@@ -806,7 +806,7 @@
 
   const CUSTOM_KEY = "two-bells:custom";
   let custom = { pitch: 330, ring: 10, bright: 60, shimmer: 20, timbre: "church",
-                 vibrate: false };
+                 silent: false, vibrate: false };
 
   // iOS has never implemented this and shows no sign of starting, so the control
   // is not offered there: a switch that does nothing is worse than no switch.
@@ -820,6 +820,7 @@
       id: "custom", label: "Custom",
       first: custom.pitch,
       decay: custom.ring,
+      silent: custom.silent,
       vibrate: CAN_VIBRATE && custom.vibrate,
       // The body sets the relative decay rates; Brightness leans on them.
       damping: body.damping - b * 0.35,
@@ -860,6 +861,9 @@
     // got its AudioContext, should still be able to say the bell has gone.
     // Tap, gap, ring -- a strike rather than an alarm.
     if (voice.vibrate) navigator.vibrate([30, 40, 160]);
+    // After the buzz, not before it: silent means no sound, not no bell. The
+    // page still empties over the fade, and a phone still says so in the hand.
+    if (voice.silent) return;
     if (!audio) return;
     const now = audio.currentTime;
     const root = voice.first;
@@ -1070,26 +1074,33 @@
       el.tune.appendChild(row);
     });
 
-    if (CAN_VIBRATE) el.tune.appendChild(buildVibrateRow());
+    el.tune.appendChild(buildToggleRow("Silent", "silent"));
+    if (CAN_VIBRATE) el.tune.appendChild(buildToggleRow("And vibrate", "vibrate"));
   }
 
-  function buildVibrateRow() {
+  // Both switches are the same switch: a name on the left and a state on the
+  // right, struck afterwards so the change is heard -- or, for Silent, is not.
+  function buildToggleRow(label, key) {
     const row = document.createElement("div");
     row.className = "tune-row";
 
-    const label = document.createElement("span");
-    label.className = "dial-label";
-    label.textContent = "And vibrate";
+    const name = document.createElement("span");
+    name.className = "dial-label";
+    name.textContent = label;
 
     const button = document.createElement("button");
     button.type = "button";
     button.className = "timbre";
-    button.textContent = "Vibrate";
-    const show = () => button.setAttribute("aria-pressed", String(!!custom.vibrate));
+    button.dataset.toggle = key;
+
+    const show = () => {
+      button.setAttribute("aria-pressed", String(!!custom[key]));
+      button.textContent = custom[key] ? "On" : "Off";
+    };
     show();
 
     button.addEventListener("click", () => {
-      custom.vibrate = !custom.vibrate;
+      custom[key] = !custom[key];
       show();
       voice = customVoice();
       try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom)); } catch (_) {}
@@ -1098,7 +1109,7 @@
       strike();
     });
 
-    row.append(label, button);
+    row.append(name, button);
     return row;
   }
 

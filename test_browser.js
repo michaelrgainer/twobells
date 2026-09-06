@@ -217,23 +217,59 @@ test("a tuned bell is not lost by trying another", SUITE, async (t) => {
   });
 });
 
-test("vibration, where the device has it", SUITE, async (t) => {
-  await t.test("the switch is offered, and remembered", () => {
-    const seen = run(`
-      document.querySelector('[data-voice="custom"]').click();
-      await wait(100);
-      const row = Array.from(document.querySelectorAll(".tune .tune-row"))
-        .find((r) => r.querySelector(".dial-label").textContent === "And vibrate");
-      if (!row) throw new Error("no vibrate row on a browser that has navigator.vibrate");
-      const button = row.querySelector(".timbre");
-      const before = button.getAttribute("aria-pressed");
-      button.click();
-      await wait(80);
-      return { before, after: button.getAttribute("aria-pressed"),
-               stored: JSON.parse(localStorage.getItem("two-bells:custom")).vibrate };
+test("the two switches on the custom bell", SUITE, async (t) => {
+  const OPEN_PANEL = `
+    document.querySelector('[data-voice="custom"]').click();
+    await wait(100);
+    const rowFor = (label) => Array.from(document.querySelectorAll(".tune .tune-row"))
+      .find((r) => r.querySelector(".dial-label").textContent === label);
+  `;
+
+  await t.test("Silent sits above And vibrate", () => {
+    const seen = run(OPEN_PANEL + `
+      return Array.from(document.querySelectorAll(".tune .tune-row"))
+                  .map((r) => r.querySelector(".dial-label").textContent);
     `);
-    assert.deepEqual([seen.before, seen.after], ["false", "true"]);
-    assert.equal(seen.stored, true);
+    assert.ok(seen.indexOf("Silent") < seen.indexOf("And vibrate"),
+              seen.join(" | "));
+  });
+
+  for (const [label, key] of [["Silent", "silent"], ["And vibrate", "vibrate"]]) {
+    await t.test(`${label} flips and is remembered`, () => {
+      const seen = run(OPEN_PANEL + `
+        const row = rowFor(${JSON.stringify(label)});
+        if (!row) throw new Error("no " + ${JSON.stringify(label)} + " row");
+        const button = row.querySelector(".timbre");
+        const before = [button.getAttribute("aria-pressed"), button.textContent];
+        button.click();
+        await wait(80);
+        return { before, after: [button.getAttribute("aria-pressed"), button.textContent],
+                 stored: JSON.parse(localStorage.getItem("two-bells:custom"))[${JSON.stringify(key)}] };
+      `);
+      assert.deepEqual(seen.before, ["false", "Off"]);
+      assert.deepEqual(seen.after, ["true", "On"]);
+      assert.equal(seen.stored, true);
+    });
+  }
+
+  await t.test("a silent bell still empties the page and still ends the sit", () => {
+    // Silent means no sound, not no bell: the fade and the record are unchanged.
+    const seen = run(OPEN_PANEL + `
+      rowFor("Silent").querySelector(".timbre").click();
+      await wait(80);
+      setDurations(0, 20);
+      $("start").click();
+      seam.hurry({ bellIn: 0, endIn: 400 });
+      await wait(200);
+      const mid = { fade: getComputedStyle($("sit")).getPropertyValue("--bell-fade").trim(),
+                    legend: opacityOf(".legend") };
+      await wait(500);
+      return { mid, rows: seam.getState().rows, phase: $("sit").dataset.phase };
+    `);
+    assert.notEqual(seen.mid.fade, "600ms");
+    assert.ok(seen.mid.legend < 1, `legend at ${seen.mid.legend}`);
+    assert.equal(seen.phase, "idle");
+    assert.equal(seen.rows, 1);
   });
 });
 
