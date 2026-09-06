@@ -1195,6 +1195,7 @@
   }
 
   function renderDials() {
+    bumpSettle();
     const { first, sit } = settings();
     PICKERS.slice(0, 2).forEach((picker) => {
       el[picker.button].textContent = picker.label(picker.get());
@@ -1677,6 +1678,7 @@
   }
 
   function renderLog() {
+    bumpSettle();
     raiseTotalsToLog();
     renderLogTools();
     if (!history.length) {
@@ -1745,6 +1747,62 @@
   try {
     if (localStorage.getItem(LEARNED_KEY)) el.sit.classList.add("learned");
   } catch (_) {}
+
+  // ── the test seam ───────────────────────────────────────────────────────
+  // What a test needs and the DOM cannot give it: the numbers behind the render,
+  // a counter to wait on, and a way to make a twenty-minute sit take a second.
+  // Exposed on the live page because there is no build step to strip it, and
+  // there is nothing here worth hiding -- it is a timer, and it keeps no secrets.
+  let settleCount = 0;
+
+  function bumpSettle() {
+    settleCount += 1;
+  }
+
+  window.__twobells = {
+    get settleCount() { return settleCount; },
+
+    getState: () => ({
+      phase: el.sit.dataset.phase,
+      note: el.note.innerHTML,
+      voice: voice.id,
+      first: Number(el.rngFirst.value),
+      sit: Number(el.rngSit.value),
+      rows: history.length,
+      shown: shownRows().length,
+      showing,
+      totals: readTotals(),
+      rang: session ? session.rang : null,
+      msToBell: session ? session.bellAt - Date.now() : null,
+      msToEnd: session ? session.endAt - Date.now() : null,
+    }),
+
+    // The deadlines are absolute, so bringing them forward is all it takes; the
+    // frame loop and the backstops cannot tell the difference.
+    hurry: (deadlines) => {
+      if (!session) return false;
+      const now = Date.now();
+      if (deadlines.bellIn !== undefined) session.bellAt = now + deadlines.bellIn;
+      if (deadlines.endIn !== undefined) session.endAt = now + deadlines.endIn;
+      scheduleBackstops();
+      return true;
+    },
+
+    seed: (records) => {
+      history = records.slice();
+      persistLocal();
+      renderLog();
+    },
+
+    // The pure parts, so the node tier can test the arithmetic without a browser.
+    internals: {
+      minutesSat, describe, toTSV, mergeHistory, readTotals, raiseTotals,
+      contactFrom, isQuotaError, persistLocal, loadLocal,
+      getHistory: () => history,
+      setHistory: (records) => { history = records; },
+      KEEP, FLOOR, TOOLS_FROM,
+    },
+  };
 
   loadDurations();
   buildVoices();
