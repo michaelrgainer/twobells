@@ -1473,6 +1473,7 @@
       // so unshifting afterwards left the newest sit on the page but out of
       // localStorage until some later save happened to pick it up.
       history.unshift(record);
+      countSit(record);
       save(record);
       renderLog();
     }
@@ -1502,6 +1503,12 @@
     }
   }
 
+  function minutesSat(record) {
+    if (record.outcome === "complete")
+      return record.sat === undefined ? record.sit : record.sat;
+    return Math.max(0, Math.round(record.elapsedMs / 60000));
+  }
+
   function describe(record) {
     const when = new Date(record.at);
     const day = when.toLocaleDateString(undefined,
@@ -1513,8 +1520,8 @@
     // of text it fills the width and wraps on a phone, and a wrapped log row reads
     // as two entries.
     const left = "<span class=\"sit-when\">" + day + " " + time + "</span>";
+    const sat = minutesSat(record);
     if (record.outcome === "complete") {
-      const sat = record.sat === undefined ? record.sit : record.sat;
       // "12/20 min" rather than "12 min of 20": the long form was the one row that
       // would not fit a phone, and a log is read in a column where the shape of the
       // number matters more than the grammar.
@@ -1523,8 +1530,7 @@
         : "<b>" + sat + "</b>/" + record.sit + " min";
       return left + "<span class=\"sit-len\">" + len + "</span>";
     }
-    const minutes = Math.max(0, Math.round(record.elapsedMs / 60000));
-    return left + "<span class=\"sit-len\"><em>" + minutes + "/" +
+    return left + "<span class=\"sit-len\"><em>" + sat + "/" +
            record.sit + " min</em></span>";
   }
 
@@ -1542,15 +1548,45 @@
   // Copy and Contact are earned by practice, not by the length of the list at
   // this instant. Pruning tidies the log; it does not undo the sitting, and
   // having them disappear because someone kept the last three is a surprise.
-  const SEEN_KEY = "two-bells:seen";
+  // What the practice comes to, kept apart from the log because the log can be
+  // pruned and the sitting cannot be un-sat. Monotone in both numbers: finishing
+  // a sit adds to them, and a log that implies more raises them -- which is how a
+  // browser that practised before this counter existed, and a store that syncs a
+  // fuller history than this device has seen, both end up counted.
+  const TOTALS_KEY = "two-bells:totals";
+  const COUNT_ONLY_KEY = "two-bells:seen";
 
-  function sitsEver() {
-    try { return Number(localStorage.getItem(SEEN_KEY)) || 0; } catch (_) { return 0; }
+  function readTotals() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(TOTALS_KEY) || "null");
+      if (raw) return { sits: Number(raw.sits) || 0, minutes: Number(raw.minutes) || 0 };
+      // What this replaces knew how many sits there had been, never how long.
+      return { sits: Number(localStorage.getItem(COUNT_ONLY_KEY)) || 0, minutes: 0 };
+    } catch (_) {
+      return { sits: 0, minutes: 0 };
+    }
   }
 
-  function markSitsEver() {
-    if (history.length <= sitsEver()) return;
-    try { localStorage.setItem(SEEN_KEY, String(history.length)); } catch (_) {}
+  function writeTotals(totals) {
+    try { localStorage.setItem(TOTALS_KEY, JSON.stringify(totals)); } catch (_) {}
+  }
+
+  function raiseTotals(sits, minutes) {
+    const totals = readTotals();
+    if (sits <= totals.sits && minutes <= totals.minutes) return;
+    writeTotals({ sits: Math.max(totals.sits, sits),
+                  minutes: Math.max(totals.minutes, minutes) });
+  }
+
+  function countSit(record) {
+    const totals = readTotals();
+    writeTotals({ sits: totals.sits + 1,
+                  minutes: totals.minutes + minutesSat(record) });
+  }
+
+  function raiseTotalsToLog() {
+    raiseTotals(history.length,
+                history.reduce((sum, record) => sum + minutesSat(record), 0));
   }
   let pendingKeep = null;
 
@@ -1580,7 +1616,7 @@
   }
 
   function renderPruneControl() {
-    const ever = sitsEver();
+    const ever = readTotals().sits;
     // Only this one asks about the list as it stands: with a short list there is
     // nothing worth pruning, however much practice is behind it.
     el.prune.hidden = history.length < PRUNE_FROM;
@@ -1609,13 +1645,16 @@
       const iso = when.getFullYear() + "-" + pad(when.getMonth() + 1) + "-" +
                   pad(when.getDate());
       const clock = pad(when.getHours()) + ":" + pad(when.getMinutes());
-      const sat = record.outcome === "complete"
-        ? (record.sat === undefined ? record.sit : record.sat)
-        : Math.max(0, Math.round(record.elapsedMs / 60000));
-      return [iso, clock, record.first, record.sit, sat, record.outcome].join("\t");
+      return [iso, clock, record.first, record.sit, minutesSat(record),
+              record.outcome].join("\t");
     });
+    // After a blank line so a spreadsheet keeps them out of the table: the log
+    // may have been pruned, and these are what the practice actually came to.
+    const totals = readTotals();
     return ["date\ttime\tsettle_sec\tset_min\tsat_min\toutcome"]
-      .concat(rows).join("\n");
+      .concat(rows)
+      .concat(["", "total_sits\t" + totals.sits, "total_min\t" + totals.minutes])
+      .join("\n");
   }
 
   function copyLog() {
@@ -1631,7 +1670,7 @@
   }
 
   function renderLog() {
-    markSitsEver();
+    raiseTotalsToLog();
     renderPruneControl();
     if (!history.length) {
       el.log.innerHTML = "No sits recorded yet";
