@@ -226,10 +226,10 @@
 
   .picker[hidden] { display: none; }
 
-  /* The keep-list sits at the foot of the page, where a picker centred on its
+  /* The show-list sits at the foot of the page, where a picker centred on its
      button hangs off the bottom edge and grows the document. It opens upward
      over the log instead, the way a dropdown near a window edge does. */
-  #picker-keep {
+  #picker-show {
     top: auto;
     bottom: calc(100% + 10px);
     transform: translateX(-50%);
@@ -504,9 +504,9 @@
     transition: opacity var(--bell-fade) ease;
   }
 
-  #prune[hidden], #contact[hidden], #copy[hidden] { display: none; }
+  #show-last[hidden], #contact[hidden], #copy[hidden] { display: none; }
 
-  .prune {
+  .tool {
     font-family: var(--ui);
     font-size: 14px;
     font-weight: 500;
@@ -522,8 +522,8 @@
     transition: color 160ms ease;
   }
 
-  a.prune { text-decoration: none; }
-  .prune:hover { color: var(--text); }
+  a.tool { text-decoration: none; }
+  .tool:hover { color: var(--text); }
 
   .sit:not([data-phase="idle"]) .log-tools { opacity: 0; pointer-events: none; }
 
@@ -623,20 +623,20 @@
   <div class="log" id="log" aria-live="polite">No sits recorded yet</div>
 
   <div class="log-tools">
-    <span class="pick-wrap" id="prune" hidden>
-    <button type="button" class="prune" id="pick-keep" aria-haspopup="listbox"
-            aria-expanded="false">Keep last&hellip;</button>
-    <div class="picker" id="picker-keep" hidden>
-      <div class="picker-list" id="list-keep" role="listbox"></div>
+    <span class="pick-wrap" id="show-last" hidden>
+    <button type="button" class="tool" id="pick-show" aria-haspopup="listbox"
+            aria-expanded="false">Show last&hellip;</button>
+    <div class="picker" id="picker-show" hidden>
+      <div class="picker-list" id="list-show" role="listbox"></div>
       <div class="fade fade-top"></div><div class="fade fade-bottom"></div>
       </div>
     </span>
 
     <!-- Turns up once the practice has: ten sits in, someone is using this, and a
          way to say so costs one line. -->
-    <button type="button" class="prune" id="copy" hidden>Copy</button>
+    <button type="button" class="tool" id="copy" hidden>Copy</button>
 
-    <a class="prune" id="contact" hidden
+    <a class="tool" id="contact" hidden
        href="mailto:michael.r.gainer@gmail.com?subject=Two%20Bells">Contact</a>
   </div>
 </main>
@@ -669,12 +669,12 @@
     pickerSit: document.getElementById("picker-sit"),
     listFirst: document.getElementById("list-first"),
     listSit: document.getElementById("list-sit"),
-    prune: document.getElementById("prune"),
+    showLast: document.getElementById("show-last"),
     contact: document.getElementById("contact"),
     copy: document.getElementById("copy"),
-    pickKeep: document.getElementById("pick-keep"),
-    pickerKeep: document.getElementById("picker-keep"),
-    listKeep: document.getElementById("list-keep"),
+    pickShow: document.getElementById("pick-show"),
+    pickerShow: document.getElementById("picker-show"),
+    listShow: document.getElementById("list-show"),
   };
 
   // Sixty units fill a ring, whether they are seconds of settling or minutes of
@@ -1104,7 +1104,7 @@
       label: (v) => v + " min",
       get: () => Number(el.rngSit.value),
       set: (v) => { el.rngSit.value = String(v); renderDials(); saveDurations(); } },
-    { button: "pickKeep", panel: "pickerKeep", list: "listKeep",
+    { button: "pickShow", panel: "pickerShow", list: "listShow",
       grid: [5, 10, 20, 50, 100],
       label: (v) => (v ? "last " + v : "all"),
       get: () => showing,
@@ -1560,7 +1560,7 @@
   // this instant. Pruning tidies the log; it does not undo the sitting, and
   // having them disappear because someone kept the last three is a surprise.
   // What the practice comes to, kept apart from the log because the log can be
-  // pruned and the sitting cannot be un-sat. Monotone in both numbers: finishing
+  // trimmed and the sitting cannot be un-sat. Monotone in both numbers: finishing
   // a sit adds to them, and a log that implies more raises them -- which is how a
   // browser that practised before this counter existed, and a store that syncs a
   // fuller history than this device has seen, both end up counted.
@@ -1619,16 +1619,16 @@
     return showing > 0 ? history.slice(0, showing) : history;
   }
 
-  function renderPruneControl() {
+  function renderLogTools() {
     const ever = readTotals().sits;
     // Only this one asks about the list as it stands: with a short list there is
     // nothing worth pruning, however much practice is behind it.
     // Stays out while a limit is set, however short the log gets: it is the only
     // way back to seeing all of it.
-    el.prune.hidden = history.length < TOOLS_FROM && !showing;
+    el.showLast.hidden = history.length < TOOLS_FROM && !showing;
     el.contact.hidden = ever < contactFrom();
     el.copy.hidden = ever < TOOLS_FROM;
-    el.pickKeep.textContent = showing
+    el.pickShow.textContent = showing
       ? "Showing " + showing + " of " + history.length
       : "Show last\u2026";
   }
@@ -1649,8 +1649,9 @@
       return [iso, clock, record.first, record.sit, minutesSat(record),
               record.outcome].join("\t");
     });
-    // After a blank line so a spreadsheet keeps them out of the table: the log
-    // may have been pruned, and these are what the practice actually came to.
+    // After a blank line so a spreadsheet keeps them out of the table. Every row
+    // this browser still holds is exported, whatever the log is set to show, and
+    // these are what the practice came to even if a full browser dropped some.
     const totals = readTotals();
     return ["date\ttime\tsettle_sec\tset_min\tsat_min\toutcome"]
       .concat(rows)
@@ -1672,7 +1673,7 @@
 
   function renderLog() {
     raiseTotalsToLog();
-    renderPruneControl();
+    renderLogTools();
     if (!history.length) {
       el.log.innerHTML = "No sits recorded yet";
       return;
@@ -1682,7 +1683,7 @@
     // that depends on all three continuing to agree is one that will eventually
     // show someone their practice backwards.
     // Sorted in place, so the array's order is the order on screen -- which is
-    // what makes "keep the first N" mean "keep the newest N" rather than
+    // what makes "show the first N" mean "show the newest N" rather than
     // whichever N happened to be stored first.
     history.sort((a, b) => String(b.at).localeCompare(String(a.at)));
     el.log.innerHTML = shownRows()
