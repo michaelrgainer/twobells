@@ -790,6 +790,9 @@
     const { first, sit } = settings();
     el.valFirst.textContent = first + "s";
     el.valSit.textContent = sit + "min";
+    // The button names what pressing it actually starts. With settling time on the
+    // clock the first thing that happens is settling, not the sit.
+    el.start.textContent = first > 0 ? "Settle" : "Begin";
     if (!session) {
       paintDial(DIALS[0], sit);
       paintDial(DIALS[1], first);
