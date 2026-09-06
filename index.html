@@ -59,9 +59,14 @@
 
        This value is only ever the OTHER direction: how quickly the page comes back
        when a sit ends. Nothing fades between load and the first bell, so it never
-       applies on the way out. It matches the figure finish() restores, because two
-       numbers for one idea is how they end up disagreeing. */
+       applies on the way out. finish() clears the property rather than restoring
+       a figure of its own, because two numbers for one idea is how they end up
+       disagreeing. */
     --bell-fade: 600ms;
+
+    /* How long the wording inside the circle takes to change. Declared here and
+       read back in JS, so the swap lands when the old words have actually gone. */
+    --note-fade: 600ms;
 
     /* An app surface, not a document. Dragging a ring on a desktop otherwise
        starts a text selection and hauls the legend around with the pointer. */
@@ -409,7 +414,7 @@
     font-size: 33px;
     line-height: 1.4;
     color: var(--muted);
-    transition: opacity 600ms ease;
+    transition: opacity var(--note-fade) ease;
   }
 
   /* ── controls and log ──────────────────────────────────────────────────── */
@@ -433,7 +438,15 @@
 
   .btn:hover { background: var(--ring); color: var(--ground); }
 
-  .btn-cancel { border-color: var(--hairline); color: var(--muted); }
+  /* Tighter than Begin because its label is a sentence rather than a word:
+     at the generous padding "Oops, never mind" wraps to two lines on a
+     narrow phone. The two are never on screen together. */
+  .btn-cancel {
+    border-color: var(--hairline);
+    color: var(--muted);
+    padding-left: 28px;
+    padding-right: 28px;
+  }
   .btn-cancel:hover { background: transparent; border-color: var(--rose); color: var(--rose); }
 
   .btn[hidden] { display: none; }
@@ -1045,6 +1058,30 @@
   let frame = null;
   const backstops = [];
 
+  const SETTLE_NOTE = "Settle<br>then begin";
+  const NOTE_LINGER_MS = 30000;
+  let noteTimer = null;
+
+  // Every change to the wording goes through here, so a fade left over from the
+  // last sit cannot overwrite the words the next one just put up.
+  function setNote(html) {
+    clearTimeout(noteTimer);
+    noteTimer = null;
+    el.note.style.opacity = "";
+    el.note.innerHTML = html;
+  }
+
+  // "Sit complete" is an acknowledgement, not a resting state: it stays long
+  // enough to be read on the way back to the cushion, then the circle goes back
+  // to saying what it is for.
+  function settleNoteAfterLinger() {
+    noteTimer = setTimeout(() => {
+      const fade = parseFloat(getComputedStyle(el.sit).getPropertyValue("--note-fade"));
+      el.note.style.opacity = "0";
+      noteTimer = setTimeout(() => setNote(SETTLE_NOTE), fade || 0);
+    }, NOTE_LINGER_MS);
+  }
+
   function settings() {
     return { first: Number(el.rngFirst.value), sit: Number(el.rngSit.value) };
   }
@@ -1327,9 +1364,9 @@
     };
 
     el.sit.dataset.phase = first > 0 ? "waiting" : "sitting";
-    el.note.textContent = first > 0 ? "Settling" : "";
+    setNote(first > 0 ? "Settling" : "");
     el.start.hidden = true;
-    el.cancel.textContent = first > 0 ? "Oops" : "End Now";
+    el.cancel.textContent = first > 0 ? "Oops, never mind" : "End Now";
     el.cancel.hidden = false;
     closePanel();
 
@@ -1360,7 +1397,7 @@
       setBellFade(voice.decay + "s");
       el.sit.dataset.phase = "sitting";
       el.cancel.textContent = "End Now";
-      el.note.textContent = "";
+      setNote("");
     }
 
     if (now >= session.endAt) {
@@ -1415,7 +1452,8 @@
     if (outcome === "complete") setBellFade(voice.decay + "s");
     else el.sit.style.removeProperty("--bell-fade");
     el.sit.dataset.phase = "idle";
-    el.note.innerHTML = outcome === "complete" ? "Sit complete" : "Settle<br>then begin";
+    setNote(outcome === "complete" ? "Sit complete" : SETTLE_NOTE);
+    if (outcome === "complete") settleNoteAfterLinger();
     el.start.hidden = false;
     el.cancel.hidden = true;
     renderDials();
