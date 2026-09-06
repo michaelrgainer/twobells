@@ -364,38 +364,91 @@
   // inharmonicity and length: a bowl's partials sit at unmusical ratios and ring
   // for six seconds; a glass bell is near-harmonic, high, and gone in two.
   const VOICES = [
-    { id: "bowl",  label: "Bowl",  first: 210, close: 150, decay: 6.5,
-      partials: [[1, 0.50], [2.68, 0.22], [5.15, 0.10], [8.40, 0.05]] },
-    { id: "bell",  label: "Bell",  first: 587, close: 392, decay: 3.4,
-      partials: [[1, 0.40], [2.00, 0.16], [3.01, 0.10], [4.17, 0.06]] },
-    { id: "chime", label: "Chime", first: 440, close: 330, decay: 4.4,
-      partials: [[1, 0.36], [2.76, 0.18], [5.40, 0.10], [8.93, 0.05]] },
-    { id: "glass", label: "Glass", first: 880, close: 660, decay: 2.4,
-      partials: [[1, 0.26], [3.00, 0.14], [5.00, 0.08], [7.00, 0.04]] },
+    // `damping` sets how much faster high partials die than low ones, which is the
+    // single thing that separates a bell from a clang: equal decay holds the whole
+    // inharmonic cluster sounding at once. `detune` is the spread between a bell's
+    // paired modes -- real ones are never quite symmetric, and the slow beating
+    // between the pair is what reads as metal rather than as an oscillator.
+    { id: "bowl",  label: "Bowl",  first: 210, close: 150, decay: 8.0,
+      damping: 0.95, detune: 0.0035, strike: 0.20,
+      partials: [[1, 0.50], [2.68, 0.20], [5.15, 0.09], [8.40, 0.04]] },
+    { id: "bell",  label: "Bell",  first: 523, close: 349, decay: 5.0,
+      damping: 1.15, detune: 0.0020, strike: 0.32,
+      partials: [[0.5, 0.28], [1, 0.40], [2.00, 0.15], [3.01, 0.08], [4.17, 0.04]] },
+    { id: "chime", label: "Chime", first: 440, close: 330, decay: 6.0,
+      damping: 1.05, detune: 0.0012, strike: 0.26,
+      partials: [[1, 0.38], [2.76, 0.16], [5.40, 0.07], [8.93, 0.03]] },
+    { id: "glass", label: "Glass", first: 784, close: 587, decay: 3.6,
+      damping: 1.35, detune: 0.0015, strike: 0.38,
+      partials: [[1, 0.30], [2.00, 0.13], [3.00, 0.07], [4.00, 0.03]] },
   ];
 
   const VOICE_KEY = "two-bells:voice";
   let voice = VOICES[0];
 
+  let noiseBuffer = null;
+
+  function makeNoise() {
+    // One buffer, reused: the strike transient is the same shaped noise every
+    // time, only filtered differently per voice.
+    const frames = Math.floor(audio.sampleRate * 0.25);
+    const buffer = audio.createBuffer(1, frames, audio.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < frames; i++) data[i] = Math.random() * 2 - 1;
+    return buffer;
+  }
+
   function strike(which) {
     if (!audio) return;
     const now = audio.currentTime;
     const root = which === "close" ? voice.close : voice.first;
-    // The closing bell is lower and rings longer than the opening one, in every
-    // voice: it marks the end of the sit rather than the start of it.
-    const seconds = which === "close" ? voice.decay * 1.5 : voice.decay;
-    voice.partials.forEach(([ratio, level]) => {
-      const osc = audio.createOscillator();
-      const gain = audio.createGain();
-      osc.type = "sine";
-      osc.frequency.value = root * ratio;
-      gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(level, now + 0.012);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + seconds);
-      osc.connect(gain).connect(audio.destination);
-      osc.start(now);
-      osc.stop(now + seconds + 0.1);
+    const length = which === "close" ? voice.decay * 1.4 : voice.decay;
+
+    // A brightness envelope over the whole strike. The top end belongs to the
+    // moment of impact, not to the ring that follows it.
+    const bus = audio.createGain();
+    const tone = audio.createBiquadFilter();
+    tone.type = "lowpass";
+    tone.Q.value = 0.7;
+    tone.frequency.setValueAtTime(root * 14, now);
+    tone.frequency.exponentialRampToValueAtTime(root * 2.6, now + 1.1);
+    bus.connect(tone).connect(audio.destination);
+
+    voice.partials.forEach(([ratio, level], index) => {
+      // Higher partials die first, by `damping`.
+      const life = Math.max(0.12, length * Math.pow(ratio, -voice.damping));
+      // The pair, a few cents apart, beating slowly against each other.
+      [-1, 1].forEach((side) => {
+        const osc = audio.createOscillator();
+        const gain = audio.createGain();
+        osc.type = "sine";
+        osc.frequency.value = root * ratio * (1 + side * voice.detune * 0.5);
+        gain.gain.setValueAtTime(0, now);
+        // Higher partials speak a hair later, as they do on a real strike.
+        gain.gain.linearRampToValueAtTime(level * 0.5, now + 0.004 + index * 0.0015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + life);
+        osc.connect(gain).connect(bus);
+        osc.start(now);
+        osc.stop(now + life + 0.05);
+      });
     });
+
+    // The strike itself: a short band of noise at the moment of contact. Without
+    // it the tone fades up rather than being struck, which is most of why the
+    // first attempt sounded synthetic.
+    if (!noiseBuffer) noiseBuffer = makeNoise();
+    const hit = audio.createBufferSource();
+    const band = audio.createBiquadFilter();
+    const hitGain = audio.createGain();
+    hit.buffer = noiseBuffer;
+    band.type = "bandpass";
+    band.frequency.value = root * 7;
+    band.Q.value = 1.2;
+    hitGain.gain.setValueAtTime(voice.strike * 0.25, now);
+    hitGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
+    hit.connect(band).connect(hitGain).connect(bus);
+    hit.start(now);
+    hit.stop(now + 0.25);
   }
 
   function chooseVoice(next, preview) {
