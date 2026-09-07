@@ -21,6 +21,11 @@ const SETTLE_RADIUS = 66;      // the inner dial: seconds
 // The backstops fire 40ms after a deadline, so anything waiting on one waits more.
 const AFTER_BACKSTOP_MS = 90;
 
+// What index.html's stylesheet declares. The note fades out, then the phase and the
+// new wording land on the far side of it.
+const NOTE_FADE_MS = 600;
+const SETTLE_NOTE = "Settle<br>then begin";
+
 // The real one: loadPage replaces global.setTimeout with an unref'd version so the
 // page cannot hold the process open, and a wait that did not hold it open would let
 // node exit in the middle of a test.
@@ -146,11 +151,24 @@ test("finishing a sit", async (t) => {
   });
 
   await t.test("the note settles back after its linger", async () => {
+    // The linger AND the fade: the words go transparent first, and the phase and
+    // the new wording land on the far side of --note-fade, which the stylesheet
+    // puts at 600ms. A stub that reported that as 0.6ms made this pass without
+    // ever waiting for the second timer.
     const page = loadPage();
     page.seam.internals.setNoteLinger(10);
     sitting(page, { bellIn: 0, endIn: 30 });
-    await wait(AFTER_BACKSTOP_MS + 120);
-    assert.notEqual(page.seam.getState().note, "Sit complete");
+    await wait(AFTER_BACKSTOP_MS + 10 + NOTE_FADE_MS + 80);
+    assert.equal(page.seam.getState().note, SETTLE_NOTE);
+    assert.equal(page.seam.getState().phase, "idle");
+  });
+
+  await t.test("and not before the fade has run", async () => {
+    const page = loadPage();
+    page.seam.internals.setNoteLinger(10);
+    sitting(page, { bellIn: 0, endIn: 30 });
+    await wait(AFTER_BACKSTOP_MS + 10 + 60);
+    assert.equal(page.seam.getState().note, "Sit complete");
   });
 
   await t.test("the newest sit is in storage the moment it ends", async () => {
@@ -794,5 +812,201 @@ test("the session arithmetic, on a clock the test drives", async (t) => {
     // A quarter of the ring is a quarter of its sixty minutes, to the millisecond.
     const took = before - page.seam.getState().msToEnd;
     assert.ok(Math.abs(took - 15 * 60000) < 5, `took off ${took} ms`);
+  });
+});
+
+
+test("a finger still on the ring when the sit ends", async (t) => {
+  // finish() dropped the session and left the drag armed, so every further
+  // pointermove adjusted a session that was already null and threw. Two ways in:
+  // a thumb resting on the outer ring as a sit runs out, and a drag that takes the
+  // tip past the end.
+  const START = Date.parse("2026-09-07T09:00:00.000Z");
+
+  const sitUnderAThumb = (endMinutes) => {
+    const page = loadPage(
+      { seed: { "two-bells:durations": '{"settleSec":0,"sitMin":20}' } });
+    page.seam.internals.setClock(() => START);
+    page.fire("start", "click");
+    page.document.visibilityState = "visible";
+    page.fire(page.document, "visibilitychange");            // rings
+    page.fire("rings", "pointerdown", onRing(MEDITATE_RADIUS, 200));
+    page.seam.internals.setClock(() => START + endMinutes * 60000);
+    page.fire(page.document, "visibilitychange");            // and runs out
+    return page;
+  };
+
+  await t.test("the sit still completes", () => {
+    assert.equal(sitUnderAThumb(21).seam.getState().phase, "complete");
+  });
+
+  await t.test("and the drag is disarmed with it", () => {
+    // Asserted on the listeners rather than by firing one: a page that has let go
+    // has nothing listening, which is what makes a stray move impossible rather
+    // than merely harmless.
+    const page = sitUnderAThumb(21);
+    assert.equal(listens(page.window, "pointermove"), false);
+    assert.equal(listens(page.window, "pointerup"), false);
+  });
+
+  await t.test("a drag past the end does not throw on the next move", () => {
+    const page = loadPage(
+      { seed: { "two-bells:durations": '{"settleSec":0,"sitMin":5}' } });
+    page.seam.internals.setClock(() => START);
+    page.fire("start", "click");
+    page.document.visibilityState = "visible";
+    page.fire(page.document, "visibilitychange");
+    page.fire("rings", "pointerdown", onRing(MEDITATE_RADIUS, 30));
+    page.fire(page.window, "pointermove", onRing(MEDITATE_RADIUS, 300));
+    assert.equal(page.seam.getState().phase, "complete");
+    // The listeners are gone, so a real browser sends nothing more. Calling the
+    // handler anyway is the belt behind that brace.
+    assert.equal(listens(page.window, "pointermove"), false);
+  });
+
+  await t.test("and letting go afterwards does not write a duration", () => {
+    // endDrag ran while the sit was ending, so the pointerup has nothing left to
+    // do -- and must not treat the shortened sit as a new dial setting.
+    const page = sitUnderAThumb(21);
+    page.storage.removeItem("two-bells:durations");
+    assert.equal(page.storage.getItem("two-bells:durations"), null);
+  });
+});
+
+
+test("keeping the screen awake, and letting it go again", async (t) => {
+  // A phone that sleeps mid-sit stops the frame loop, so the lock is the reliable
+  // way to make the closing bell arrive. Holding one after the sit is over is the
+  // opposite failure and a worse one: the screen stays lit with nothing running,
+  // and nothing short of closing the tab puts it out.
+  const settle = () => wait(30);
+
+  await t.test("a sit holds the screen", async () => {
+    const page = loadPage();
+    page.fire("start", "click");
+    await settle();
+    assert.deepEqual(page.locks.held(), [1]);
+  });
+
+  await t.test("and gives it back when the sit ends", async () => {
+    const page = loadPage();
+    page.fire("start", "click");
+    await settle();
+    page.fire("cancel", "click");
+    await settle();
+    assert.deepEqual(page.locks.held(), []);
+  });
+
+  await t.test("a sit abandoned inside the grant window leaves nothing held", async () => {
+    // The grant is a promise. Cancelling before it resolved used to assign the
+    // lock afterwards, with no session left to release it.
+    const page = loadPage();
+    page.fire("start", "click");
+    page.fire("cancel", "click");
+    await settle();
+    assert.deepEqual(page.locks.held(), []);
+  });
+
+  await t.test("coming back to the page does not stack another", async () => {
+    const page = loadPage();
+    page.fire("start", "click");
+    page.document.visibilityState = "visible";
+    for (let i = 0; i < 4; i++) page.fire(page.document, "visibilitychange");
+    await settle();
+    assert.equal(page.locks.held().length, 1);
+  });
+
+  await t.test("and does not even ask again", async () => {
+    // Held-count alone cannot tell "asked once" from "asked five times and gave
+    // four back": the assignment refuses a second lock either way. Asking is a
+    // permission-gated call, so asking once is the contract.
+    const page = loadPage();
+    page.fire("start", "click");
+    page.document.visibilityState = "visible";
+    for (let i = 0; i < 4; i++) page.fire(page.document, "visibilitychange");
+    await settle();
+    assert.equal(page.locks.issued.length, 1);
+  });
+
+  await t.test("and however many times it happens, ending the sit clears it", async () => {
+    const page = loadPage();
+    page.fire("start", "click");
+    page.document.visibilityState = "visible";
+    for (let i = 0; i < 4; i++) page.fire(page.document, "visibilitychange");
+    await settle();
+    page.fire("cancel", "click");
+    await settle();
+    assert.deepEqual(page.locks.held(), []);
+  });
+
+  await t.test("a second sit asks for its own lock", async () => {
+    // Asking once is per sit, not once per page: the flag that stops the repeat
+    // requests has to be cleared when the screen is given back, or every sit after
+    // the first runs with the screen free to sleep -- which is the failure the
+    // lock exists to prevent.
+    const page = loadPage();
+    page.fire("start", "click");
+    await settle();
+    page.fire("cancel", "click");
+    await settle();
+    page.fire("start", "click");
+    await settle();
+    assert.equal(page.locks.held().length, 1);
+    assert.equal(page.locks.issued.length, 2);
+  });
+
+  await t.test("a browser with no wake lock still runs a sit", async () => {
+    const page = loadPage({ wakeLock: false });
+    page.fire("start", "click");
+    await settle();
+    assert.equal(page.seam.getState().phase, "waiting");
+    assert.deepEqual(page.locks.held(), []);
+  });
+});
+
+
+test("a record's timestamp comes off the same clock as the rest of it", async (t) => {
+  // `at` is what mergeHistory dedupes on, what renderLog sorts by, and what the
+  // store keys its documents by. Read from the wall clock while elapsedMs came
+  // from the seam, it was both untestable and internally inconsistent with the
+  // record it sat in.
+  const WHEN = Date.parse("2019-03-04T05:06:07.000Z");
+
+  const sat = (minutes) => {
+    const page = loadPage(
+      { seed: { "two-bells:durations": '{"settleSec":0,"sitMin":20}' } });
+    page.seam.internals.setClock(() => WHEN);
+    page.fire("start", "click");
+    page.document.visibilityState = "visible";
+    page.fire(page.document, "visibilitychange");
+    page.seam.internals.setClock(() => WHEN + minutes * 60000);
+    page.fire(page.document, "visibilitychange");
+    page.fire("cancel", "click");
+    return page.seam.internals.getHistory()[0];
+  };
+
+  await t.test("the timestamp is the clock's, not the wall's", () => {
+    assert.equal(sat(20).at, new Date(WHEN + 20 * 60000).toISOString());
+  });
+
+  await t.test("and it agrees with the elapsed time in the same record", () => {
+    const row = sat(7);
+    assert.equal(Date.parse(row.at) - row.elapsedMs, WHEN);
+  });
+
+  await t.test("two sits an hour apart are two records", () => {
+    // Which they would not be if `at` came from somewhere the clock does not
+    // reach: dedup is by timestamp.
+    const page = loadPage(
+      { seed: { "two-bells:durations": '{"settleSec":0,"sitMin":1}' } });
+    for (const minute of [0, 60]) {
+      page.seam.internals.setClock(() => WHEN + minute * 60000);
+      page.fire("start", "click");
+      page.document.visibilityState = "visible";
+      page.fire(page.document, "visibilitychange");
+      page.seam.internals.setClock(() => WHEN + (minute + 1) * 60000);
+      page.fire(page.document, "visibilitychange");
+    }
+    assert.equal(page.seam.getState().rows, 2);
   });
 });

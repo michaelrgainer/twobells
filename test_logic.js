@@ -313,12 +313,31 @@ test("what gets written to storage", async (t) => {
     assert.ok(storage.getItem("two-bells:log").length <= 3000);
   });
 
-  await t.test("and gives up rather than trimming away a log it cannot write", () => {
-    // Safari in private browsing refuses every write. Without a floor the retry
-    // loop would shorten the log forever chasing a request that cannot succeed.
+  await t.test("a browser that refuses every write keeps its log on the screen", () => {
+    // Safari in private browsing refuses one at any length. Trimming for that
+    // gains nothing -- nothing is saved either way -- and used to cost the page
+    // 180 of the 200 sits it was showing.
     const { seam } = loadPage({ limitBytes: 0 });
     seam.seed(log(200));
-    assert.equal(seam.internals.getHistory().length, seam.internals.FLOOR);
+    assert.equal(seam.internals.getHistory().length, 200);
+  });
+
+  await t.test("and does not shorten it forever chasing an impossible write", () => {
+    // The floor stops the retry loop; what is above stops it costing anything.
+    const { seam } = loadPage({ limitBytes: 0 });
+    seam.seed(log(200));
+    seam.internals.persistLocal();
+    assert.equal(seam.internals.getHistory().length, 200);
+  });
+
+  await t.test("but a browser that can take a shorter log gets one", () => {
+    // Where trimming does buy a write, the page shows what was stored, so what is
+    // on the screen and what a reload would find stay one list.
+    const { seam, storage } = loadPage({ limitBytes: 3000 });
+    seam.seed(log(200));
+    const stored = JSON.parse(storage.getItem("two-bells:log"));
+    assert.equal(seam.internals.getHistory().length, stored.length);
+    assert.ok(stored.length < 200);
   });
 });
 

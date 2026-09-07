@@ -22,7 +22,7 @@ const { pageScript } = require("./stub_dom.js");
 
 const SCRIPT_URL = "index.html";
 const TEST_FILES = ["test_smoke.js", "test_logic.js", "test_session.js",
-                    "test_panel.js"];
+                    "test_panel.js", "test_bell.js"];
 
 function collectCoverage() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "twobells-cov-"));

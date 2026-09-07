@@ -1138,7 +1138,9 @@
   // What Custom opens: a body to choose and four things to move. Tall enough to
   // push the rings off a phone screen, so it does not rely on being dismissed.
 
-  const PANEL_IDLE_MS = 10000;
+  // A `let` for the same reason noteLingerMs is one: it is the length of a wait,
+  // and a test that has to sit through the real one is a test nobody runs.
+  let panelIdleMs = 10000;
   let panelTimer = null;
 
   function closePanel() {
@@ -1154,7 +1156,7 @@
 
   function keepPanelOpen() {
     clearTimeout(panelTimer);
-    panelTimer = setTimeout(closePanel, PANEL_IDLE_MS);
+    panelTimer = setTimeout(closePanel, panelIdleMs);
   }
 
   function chooseVoice(id) {
@@ -1619,14 +1621,31 @@
   // all. The wake lock is the reliable fix; the elapsed-time check on resume is
   // the fallback for when it is unavailable or dropped.
   let wakeLock = null;
+  let wakeLockAsked = false;
 
   async function holdScreen() {
+    // One lock at a time, and only while there is a sit to hold it for. The grant
+    // is a promise, and everything that can go wrong goes wrong in the gap:
+    //
+    //   asking on every return to the foreground sent a request per visit, and
+    //   since they all went out before the first resolved, guarding on the lock we
+    //   have does not stop it -- hence a flag for having asked at all;
+    //
+    //   a sit cancelled inside that gap had the lock assigned with nothing left to
+    //   release it, so the screen stayed awake for the life of the page. On a phone
+    //   that is a flat battery and no way to explain it.
+    if (wakeLock || wakeLockAsked || !("wakeLock" in navigator)) return;
+    wakeLockAsked = true;
     try {
-      if ("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen");
+      const granted = await navigator.wakeLock.request("screen");
+      if (session && !wakeLock) wakeLock = granted;
+      else granted.release().catch(() => {});
     } catch (_) { /* unsupported or refused; the resume check covers it */ }
   }
 
   function releaseScreen() {
+    // Both, so the next sit may ask again.
+    wakeLockAsked = false;
     if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
   }
 
@@ -1639,7 +1658,11 @@
       ? Math.max(0, Math.round((clock() - session.bellAt) / 60000))
       : 0;
     const record = {
-      at: new Date().toISOString(),
+      // Off the same clock as everything else in the record. Read from the wall
+      // clock, `at` was the one time value a test could not drive -- and it is the
+      // one that decides identity: mergeHistory dedupes on it, renderLog sorts on
+      // it, and the store keys its documents by it.
+      at: new Date(clock()).toISOString(),
       settleSec: session.settleSec,
       sitMin: session.sitMin,
       satMin,
@@ -1655,6 +1678,10 @@
     if (frame) cancelAnimationFrame(frame);
     while (backstops.length) clearTimeout(backstops.pop());
     releaseScreen();
+    // A finger may still be on the ring: a sit can end under a resting thumb, or
+    // be dragged past its own end. The drag was left armed and every further
+    // pointermove then adjusted a session that no longer existed.
+    endDrag();
 
     // A completed sit rests before it resets: the page stays as empty as it was,
     // over the length of the closing bell, and settleNoteAfterLinger puts it back.
@@ -1781,6 +1808,7 @@
   }
 
   function adjustSit(point) {
+    if (!session || !sitDrag) return;
     let delta = angleOf(point) - sitDrag.angle;
     if (delta > 180) delta -= 360;
     if (delta < -180) delta += 360;
@@ -1864,16 +1892,20 @@
     // Past the cap the oldest simply go, and in place rather than only on the way
     // out, so what the page shows and what a reload would find are one list.
     if (history.length > KEEP) history = history.slice(0, KEEP);
+    // The trimming happens to a candidate, and `history` is assigned only by a
+    // write that succeeded. A shorter list is worth keeping only if being shorter
+    // is what let it be written: Safari in private browsing refuses one at every
+    // length, and trimming for that saved nothing and cost the sits on the screen
+    // -- two hundred became twenty, none of them stored either way.
+    let attempt = history;
     while (true) {
       try {
-        localStorage.setItem(KEY, JSON.stringify(history));
+        localStorage.setItem(KEY, JSON.stringify(attempt));
+        history = attempt;
         return;
       } catch (err) {
-        // For the browser that refuses even a capped write. The floor matters:
-        // Safari in private browsing refuses every one, and without it the log
-        // would be trimmed away trying to satisfy an impossible request.
-        if (!isQuotaError(err) || history.length <= FLOOR) return;
-        history = history.slice(0, Math.max(FLOOR, Math.floor(history.length * 0.9)));
+        if (!isQuotaError(err) || attempt.length <= FLOOR) return;
+        attempt = attempt.slice(0, Math.max(FLOOR, Math.floor(attempt.length * 0.9)));
       }
     }
   }
@@ -2158,6 +2190,7 @@
     internals: {
       minutesSat, describe, toTSV, mergeHistory, readTotals, raiseTotals,
       setNoteLinger: (ms) => { noteLingerMs = ms; },
+      setPanelIdle: (ms) => { panelIdleMs = ms; },
       // A clock the test drives, or null for the real one. Every deadline is an
       // absolute instant read off this, so a sit of any length can be walked
       // through instant by instant with nothing waiting on real time.

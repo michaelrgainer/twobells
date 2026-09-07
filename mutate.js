@@ -18,11 +18,13 @@
 //
 // Survivors that have been looked at and are NOT gaps, so nobody chases them twice:
 //
-//   the audio tables      partials, damping, detune, strike, bright, hitBand. The
-//                         stub's AudioContext is deaf and so is a headless Chrome,
-//                         so no test tier can hear a timbre change. The cowbell was
-//                         tuned by spectral analysis of real recordings, which is a
-//                         measurement and not a unit test.
+//   the tuning of a timbre  the exact level of a partial, or the third decimal of
+//                           a damping. What a bell IS -- its fundamental, its
+//                           partial ratios, that the top dies first, that each
+//                           partial is a beating pair -- is asserted in
+//                           test_bell.js against a recording AudioContext. What no
+//                           test can judge is whether 0.20 or 0.21 sounds better,
+//                           which is a listening decision and not an assertion.
 //   `degrees / 360`       provably equivalent: /361 drifts by at most 0.166 units
 //                         over a whole turn and every reading is rounded to an
 //                         integer, so no value can move. Same for the +90 rotation.
@@ -38,7 +40,8 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const TESTS = ["test_smoke.js", "test_logic.js", "test_session.js", "test_panel.js"];
+const TESTS = ["test_smoke.js", "test_logic.js", "test_session.js", "test_panel.js",
+                "test_bell.js"];
 
 // `+` is deliberately absent: it is string concatenation as often as arithmetic
 // here, and a mutant that only reshuffles a label is noise in the report.

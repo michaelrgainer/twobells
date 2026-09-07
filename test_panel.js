@@ -76,20 +76,55 @@ test("choosing a voice", async (t) => {
 
 
 test("the tuning panel puts itself away", async (t) => {
-  await t.test("after a stretch of not being touched", async () => {
-    // It is tall enough to push the rings off a phone screen, so it does not rely
-    // on being dismissed.
+  // It is tall enough to push the rings off a phone screen, so it does not rely on
+  // being dismissed. Nothing here used to advance time or assert it had closed:
+  // two tests, three assertions, all of them that the panel was open, and one of
+  // them written `assert.ok(... || true)`.
+  const opened = (idleMs) => {
     const page = loadPage();
+    page.seam.internals.setPanelIdle(idleMs);
     page.fire(voiceButtons(page).custom, "click");
+    return page;
+  };
+
+  await t.test("after a stretch of not being touched", async () => {
+    const page = opened(20);
     assert.equal(page.nodes["tune"].hidden, false);
-    assert.ok(listens(page.nodes["tune"], "click") || true);
+    await wait(60);
+    assert.equal(page.nodes["tune"].hidden, true);
   });
 
-  await t.test("the timer is armed while it is open", () => {
-    const page = loadPage();
-    page.fire(voiceButtons(page).custom, "click");
-    // Armed on open: the panel closes itself, so something must be pending.
+  await t.test("and not before that stretch is up", async () => {
+    const page = opened(400);
+    await wait(60);
     assert.equal(page.nodes["tune"].hidden, false);
+  });
+
+  await t.test("touching a slider starts the wait again", async () => {
+    const page = opened(120);
+    await wait(70);
+    const pitch = tunePanel(page).slider("Pitch");
+    pitch.value = "300";
+    page.fire(pitch, "input");        // keepPanelOpen
+    await wait(70);                   // past the original deadline
+    assert.equal(page.nodes["tune"].hidden, false);
+    await wait(90);
+    assert.equal(page.nodes["tune"].hidden, true);
+  });
+
+  await t.test("choosing a body starts it again too", async () => {
+    const page = opened(120);
+    await wait(70);
+    const panel = tunePanel(page);
+    page.fire(panel.bodies.find((b) => b.dataset.timbre === "glass"), "click");
+    await wait(70);
+    assert.equal(page.nodes["tune"].hidden, false);
+  });
+
+  await t.test("and beginning a sit puts it away at once", () => {
+    const page = opened(10000);
+    page.fire("start", "click");
+    assert.equal(page.nodes["tune"].hidden, true);
   });
 });
 
@@ -186,6 +221,23 @@ test("picking a value from a list", async (t) => {
     const shown = items(page, "list-sit");
     assert.ok(shown.includes("37 min"), shown.join(", "));
     assert.equal(shown.indexOf("37 min"), shown.indexOf("35 min") + 1);
+  });
+
+  await t.test("the list opens with the current value in the middle", () => {
+    // The padding above the first row means this offset lands the chosen value
+    // between its neighbours rather than at the top of the window.
+    const page = loadPage();
+    page.fire(page.nodes["pick-sit"], "click");
+    const shown = items(page, "list-sit");
+    assert.equal(page.nodes["list-sit"].scrollTop,
+                 shown.indexOf("20 min") * 44);
+  });
+
+  await t.test("and a value at the top of the list needs no scrolling", () => {
+    const page = loadPage(
+      { seed: { "two-bells:durations": '{"settleSec":0,"sitMin":5}' } });
+    page.fire(page.nodes["pick-sit"], "click");
+    assert.equal(page.nodes["list-sit"].scrollTop, 0);
   });
 
   await t.test("the settle picker offers seconds, from zero", () => {
