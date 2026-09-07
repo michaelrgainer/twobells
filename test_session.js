@@ -659,3 +659,140 @@ test("a drag that goes more than halfway round", async (t) => {
               `moved by ${(before - page.seam.getState().msToEnd) / 60000} min`);
   });
 });
+
+
+test("the session arithmetic, on a clock the test drives", async (t) => {
+  // No waiting and no tolerances. Every assertion above about durations had to
+  // allow for real time passing between the act and the check, and a tolerance
+  // wide enough for that is wide enough to hide the deadline being off by a
+  // second -- which is why changing `settleSec * 1000` survived every one of them.
+  const atMinute = (page, minutes) => {
+    page.seam.internals.setClock(() => START + minutes * 60000);
+    return page;
+  };
+  const START = Date.parse("2026-09-07T09:00:00.000Z");
+
+  const frozen = (opts) => {
+    const page = loadPage(opts);
+    page.seam.internals.setClock(() => START);
+    return page;
+  };
+
+  await t.test("the bell is exactly settleSec after Begin", () => {
+    const page = frozen({ seed: { "two-bells:durations": '{"settleSec":40,"sitMin":20}' } });
+    page.fire("start", "click");
+    assert.equal(page.seam.getState().msToBell, 40000);
+  });
+
+  await t.test("and the end is exactly settleSec plus sitMin after it", () => {
+    const page = frozen({ seed: { "two-bells:durations": '{"settleSec":40,"sitMin":20}' } });
+    page.fire("start", "click");
+    assert.equal(page.seam.getState().msToEnd, 40000 + 20 * 60000);
+  });
+
+  await t.test("a zero settle puts the bell exactly now", () => {
+    const page = frozen({ seed: { "two-bells:durations": '{"settleSec":0,"sitMin":20}' } });
+    page.fire("start", "click");
+    assert.equal(page.seam.getState().msToBell, 0);
+  });
+
+  await t.test("the bell goes at the instant it is due, not the one after", () => {
+    // `now >= bellAt`, not `>`. One millisecond of difference, and only an exact
+    // clock can tell them apart.
+    const page = frozen({ seed: { "two-bells:durations": '{"settleSec":40,"sitMin":20}' } });
+    page.fire("start", "click");
+    atMinute(page, 40 / 60);                      // exactly 40 seconds later
+    page.document.visibilityState = "visible";
+    page.fire(page.document, "visibilitychange");
+    assert.equal(page.seam.getState().rang, true);
+  });
+
+  await t.test("and not a millisecond before", () => {
+    const page = frozen({ seed: { "two-bells:durations": '{"settleSec":40,"sitMin":20}' } });
+    page.fire("start", "click");
+    page.seam.internals.setClock(() => START + 39999);
+    page.document.visibilityState = "visible";
+    page.fire(page.document, "visibilitychange");
+    assert.equal(page.seam.getState().rang, false);
+  });
+
+  await t.test("the sit ends at the instant it is due", () => {
+    const page = frozen({ seed: { "two-bells:durations": '{"settleSec":0,"sitMin":20}' } });
+    page.fire("start", "click");
+    atMinute(page, 20);
+    page.document.visibilityState = "visible";
+    page.fire(page.document, "visibilitychange");
+    assert.equal(page.seam.getState().phase, "complete");
+  });
+
+  await t.test("and not a millisecond before", () => {
+    const page = frozen({ seed: { "two-bells:durations": '{"settleSec":0,"sitMin":20}' } });
+    page.fire("start", "click");
+    page.seam.internals.setClock(() => START + 20 * 60000 - 1);
+    page.document.visibilityState = "visible";
+    page.fire(page.document, "visibilitychange");
+    assert.notEqual(page.seam.getState().phase, "complete");
+  });
+
+  await t.test("a sit cut short records the minutes actually sat", () => {
+    const page = frozen({ seed: { "two-bells:durations": '{"settleSec":0,"sitMin":20}' } });
+    page.fire("start", "click");
+    atMinute(page, 0);
+    page.document.visibilityState = "visible";
+    page.fire(page.document, "visibilitychange");   // rings
+    atMinute(page, 7);
+    page.fire("cancel", "click");
+    const row = page.seam.internals.getHistory()[0];
+    assert.equal(row.satMin, 7);
+    assert.equal(row.sitMin, 20);
+    assert.equal(row.elapsedMs, 7 * 60000);
+  });
+
+  await t.test("elapsedMs covers the settle too, not just the sitting", () => {
+    // Every other assertion used a zero settle, where Begin and the bell are the
+    // same instant and measuring from either gives the same answer.
+    const page = frozen({ seed: { "two-bells:durations": '{"settleSec":40,"sitMin":20}' } });
+    page.fire("start", "click");
+    page.seam.internals.setClock(() => START + 40000);
+    page.document.visibilityState = "visible";
+    page.fire(page.document, "visibilitychange");     // rings, 40s in
+    page.seam.internals.setClock(() => START + 40000 + 5 * 60000);
+    page.fire("cancel", "click");
+    const row = page.seam.internals.getHistory()[0];
+    assert.equal(row.satMin, 5);                      // sat for five
+    assert.equal(row.elapsedMs, 40000 + 5 * 60000);   // was here for five and forty
+  });
+
+  await t.test("the minutes sat are rounded, not truncated", () => {
+    const page = frozen({ seed: { "two-bells:durations": '{"settleSec":0,"sitMin":20}' } });
+    page.fire("start", "click");
+    page.document.visibilityState = "visible";
+    page.fire(page.document, "visibilitychange");
+    page.seam.internals.setClock(() => START + 7.6 * 60000);
+    page.fire("cancel", "click");
+    assert.equal(page.seam.internals.getHistory()[0].satMin, 8);
+  });
+
+  await t.test("and never negative, however the clock behaves", () => {
+    const page = frozen({ seed: { "two-bells:durations": '{"settleSec":0,"sitMin":20}' } });
+    page.fire("start", "click");
+    page.document.visibilityState = "visible";
+    page.fire(page.document, "visibilitychange");
+    page.seam.internals.setClock(() => START - 60000);
+    page.fire("cancel", "click");
+    assert.equal(page.seam.internals.getHistory()[0].satMin, 0);
+  });
+
+  await t.test("shortening a sit moves the end by exactly the angle dragged", () => {
+    const page = frozen({ seed: { "two-bells:durations": '{"settleSec":0,"sitMin":40}' } });
+    page.fire("start", "click");
+    page.document.visibilityState = "visible";
+    page.fire(page.document, "visibilitychange");
+    const before = page.seam.getState().msToEnd;
+    page.fire("rings", "pointerdown", onRing(MEDITATE_RADIUS, 240));
+    page.fire(page.window, "pointermove", onRing(MEDITATE_RADIUS, 150));
+    // A quarter of the ring is a quarter of its sixty minutes, to the millisecond.
+    const took = before - page.seam.getState().msToEnd;
+    assert.ok(Math.abs(took - 15 * 60000) < 5, `took off ${took} ms`);
+  });
+});

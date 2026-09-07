@@ -743,6 +743,11 @@
   // sitting, so both rings read on one absolute scale: 45s of settle and 45min of
   // sit both stand at three quarters, and the tip travels one sixtieth of a turn
   // per unit on either. The two radii are the two dials.
+  // ── the rings ───────────────────────────────────────────────────────────
+  // Two concentric dials, drawn as SVG arcs. Everything here turns a number of
+  // units into a drawing; reading a gesture back into a number is further down,
+  // under dragging a tip.
+
   const RING_UNITS = 60;
   const DIALS = [
     { name: "meditate", radius: 90, arc: "arcSit",   grip: "gripSit",
@@ -779,96 +784,21 @@
     el[dial.halo].setAttribute("cy", y);
   }
 
-  // Mode frequencies, levels and decay times measured from recordings of real
-  // cowbells. No audio ships; these numbers are all that is needed.
-  const COWBELL_ROOT_HZ = 718;
-  const COWBELL_MODES = [
-    // ratio, level, seconds to -20 dB
-    [1.000, 1.000, 0.35],
-    [2.456, 0.230, 0.28],
-    [2.997, 0.071, 0.28],
-    [4.178, 0.062, 0.15],
-    [5.406, 0.044, 0.05],
-    // A close pair up top, a fifth of a semitone apart. Two modes that nearly
-    // agree is most of what stops a struck plate sounding like an oscillator.
-    [6.480, 0.057, 0.08],
-    [6.611, 0.092, 0.15],
-  ];
-
-  // Weights each mode by its own ratio: above zero the top comes up and the body
-  // goes down. Zero here, since the brightness is in the stick, not the modes.
-  const COWBELL_TIN = 0;
-
-  // How long it hangs about. Below one, every mode is cut in the same proportion,
-  // keeping the measured balance between them. Short of one: four taps inside
-  // seven hundred milliseconds turn to mud at full length.
-  const COWBELL_HANG = 0.60;
-  const COWBELL_LEVELS = (() => {
-    const weighted = COWBELL_MODES.map(([ratio, level]) => level * Math.pow(ratio, COWBELL_TIN));
-    const loudest = Math.max(...weighted);
-    return weighted.map((v) => v / loudest);
-  })();
-
-  // Two, a pause, then two more with some of the metal taken off them. A cowbell
-  // that strikes once is a doorbell.
-  // Strike, strike, half a beat of nothing, strike, strike. The second pair is
-  // duller, and the two differ: a cowbell struck an inch along is a different bell.
-  const TAP_SEC = 0.20;
-  const COWBELL_FIGURE = [
-    // offset, level, brightness, where it was hit
-    [0.00,            1.00, 1.00, 1.000],
-    [TAP_SEC,         0.92, 0.96, 0.997],
-    [TAP_SEC * 2.5,   0.78, 0.74, 1.012],
-    [TAP_SEC * 3.5,   0.68, 0.62, 0.988],
-  ];
-
-  function strikeCowbell() {
-    const now = audio.currentTime;
-    COWBELL_FIGURE.forEach(([offset, level, bright, tilt]) =>
-      tapCowbell(now + offset, level, bright, tilt));
-  }
-
-  function tapCowbell(at, level, bright, tilt) {
-    const now = at;
-    const bus = audio.createGain();
-    bus.gain.value = 0.5 * level;
-    bus.connect(audio.destination);
-
-    COWBELL_MODES.forEach(([ratio, measured, life], index) => {
-      const level = COWBELL_LEVELS[index];
-      // The ramp runs to silence; -20 dB happens about a third of the way along,
-      // which is where the measurement put it.
-      const end = life * 3.5 * COWBELL_HANG;
-      const osc = audio.createOscillator();
-      const gain = audio.createGain();
-      osc.type = "sine";
-      osc.frequency.value = COWBELL_ROOT_HZ * ratio * tilt;
-      gain.gain.setValueAtTime(0, now);
-      const shaped = ratio > 3 ? level * bright : level;
-      gain.gain.linearRampToValueAtTime(shaped * 0.22, now + 0.002);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + end);
-      osc.connect(gain).connect(bus);
-      osc.start(now);
-      osc.stop(now + end + 0.02);
+  function renderDials() {
+    bumpSettle();
+    const { settleSec, sitMin } = settings();
+    PICKERS.slice(0, 2).forEach((picker) => {
+      el[picker.button].textContent = picker.label(picker.get());
     });
-
-    // Most of the sound: 72% of the energy inside ten milliseconds, centred above
-    // 5 kHz. A cowbell is a stick hitting metal, and the stick is the louder half.
-    if (!noiseBuffer) noiseBuffer = makeNoise();
-    const hit = audio.createBufferSource();
-    const band = audio.createBiquadFilter();
-    const hitGain = audio.createGain();
-    hit.buffer = noiseBuffer;
-    band.type = "bandpass";
-    // The stick brightens with the bell, by the same knob.
-    band.frequency.value = 5400 * (1 + 0.30 * COWBELL_TIN) * (0.72 + 0.28 * bright);
-    band.Q.value = 0.7;
-    hitGain.gain.setValueAtTime(0.75, now);
-    hitGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.022);
-    hit.connect(band).connect(hitGain).connect(bus);
-    hit.start(now);
-    hit.stop(now + 0.1);
+    // The button names what pressing it actually starts. With settling time on the
+    // clock the first thing that happens is settling, not the sit.
+    el.start.textContent = settleSec > 0 ? "Settle" : "Begin";
+    if (!session) {
+      paintDial(DIALS[0], sitMin);
+      paintDial(DIALS[1], settleSec);
+    }
   }
+
 
   // ── the bell ────────────────────────────────────────────────────────────
   // Synthesised rather than fetched: an audio file would be a network request
@@ -1102,6 +1032,97 @@
 
   // Two concerns kept apart: applying a voice, and the gesture of picking one.
   // Restoring a saved choice on load must not fling the tuning panel open.
+  // Mode frequencies, levels and decay times measured from recordings of real
+  // cowbells. No audio ships; these numbers are all that is needed.
+  const COWBELL_ROOT_HZ = 718;
+  const COWBELL_MODES = [
+    // ratio, level, seconds to -20 dB
+    [1.000, 1.000, 0.35],
+    [2.456, 0.230, 0.28],
+    [2.997, 0.071, 0.28],
+    [4.178, 0.062, 0.15],
+    [5.406, 0.044, 0.05],
+    // A close pair up top, a fifth of a semitone apart. Two modes that nearly
+    // agree is most of what stops a struck plate sounding like an oscillator.
+    [6.480, 0.057, 0.08],
+    [6.611, 0.092, 0.15],
+  ];
+
+  // Weights each mode by its own ratio: above zero the top comes up and the body
+  // goes down. Zero here, since the brightness is in the stick, not the modes.
+  const COWBELL_TIN = 0;
+
+  // How long it hangs about. Below one, every mode is cut in the same proportion,
+  // keeping the measured balance between them. Short of one: four taps inside
+  // seven hundred milliseconds turn to mud at full length.
+  const COWBELL_HANG = 0.60;
+  const COWBELL_LEVELS = (() => {
+    const weighted = COWBELL_MODES.map(([ratio, level]) => level * Math.pow(ratio, COWBELL_TIN));
+    const loudest = Math.max(...weighted);
+    return weighted.map((v) => v / loudest);
+  })();
+
+  // Two, a pause, then two more with some of the metal taken off them. A cowbell
+  // that strikes once is a doorbell.
+  // Strike, strike, half a beat of nothing, strike, strike. The second pair is
+  // duller, and the two differ: a cowbell struck an inch along is a different bell.
+  const TAP_SEC = 0.20;
+  const COWBELL_FIGURE = [
+    // offset, level, brightness, where it was hit
+    [0.00,            1.00, 1.00, 1.000],
+    [TAP_SEC,         0.92, 0.96, 0.997],
+    [TAP_SEC * 2.5,   0.78, 0.74, 1.012],
+    [TAP_SEC * 3.5,   0.68, 0.62, 0.988],
+  ];
+
+  function strikeCowbell() {
+    const now = audio.currentTime;
+    COWBELL_FIGURE.forEach(([offset, level, bright, tilt]) =>
+      tapCowbell(now + offset, level, bright, tilt));
+  }
+
+  function tapCowbell(at, level, bright, tilt) {
+    const now = at;
+    const bus = audio.createGain();
+    bus.gain.value = 0.5 * level;
+    bus.connect(audio.destination);
+
+    COWBELL_MODES.forEach(([ratio, measured, life], index) => {
+      const level = COWBELL_LEVELS[index];
+      // The ramp runs to silence; -20 dB happens about a third of the way along,
+      // which is where the measurement put it.
+      const end = life * 3.5 * COWBELL_HANG;
+      const osc = audio.createOscillator();
+      const gain = audio.createGain();
+      osc.type = "sine";
+      osc.frequency.value = COWBELL_ROOT_HZ * ratio * tilt;
+      gain.gain.setValueAtTime(0, now);
+      const shaped = ratio > 3 ? level * bright : level;
+      gain.gain.linearRampToValueAtTime(shaped * 0.22, now + 0.002);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + end);
+      osc.connect(gain).connect(bus);
+      osc.start(now);
+      osc.stop(now + end + 0.02);
+    });
+
+    // Most of the sound: 72% of the energy inside ten milliseconds, centred above
+    // 5 kHz. A cowbell is a stick hitting metal, and the stick is the louder half.
+    if (!noiseBuffer) noiseBuffer = makeNoise();
+    const hit = audio.createBufferSource();
+    const band = audio.createBiquadFilter();
+    const hitGain = audio.createGain();
+    hit.buffer = noiseBuffer;
+    band.type = "bandpass";
+    // The stick brightens with the bell, by the same knob.
+    band.frequency.value = 5400 * (1 + 0.30 * COWBELL_TIN) * (0.72 + 0.28 * bright);
+    band.Q.value = 0.7;
+    hitGain.gain.setValueAtTime(0.75, now);
+    hitGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.022);
+    hit.connect(band).connect(hitGain).connect(bus);
+    hit.start(now);
+    hit.stop(now + 0.1);
+  }
+
   function applyVoice(id) {
     voice = id === "custom" ? customVoice()
                             : (PRESETS.find((v) => v.id === id) || PRESETS[0]);
@@ -1113,6 +1134,10 @@
 
   // The panel is tall enough to push the rings off a phone screen, so it does not
   // rely on being dismissed: any stretch of not touching it puts it away again.
+  // ── the tuning panel ────────────────────────────────────────────────────
+  // What Custom opens: a body to choose and four things to move. Tall enough to
+  // push the rings off a phone screen, so it does not rely on being dismissed.
+
   const PANEL_IDLE_MS = 10000;
   let panelTimer = null;
 
@@ -1200,11 +1225,12 @@
         picker.querySelectorAll(".timbre").forEach((other) => {
           other.setAttribute("aria-pressed", String(other.dataset.timbre === body.id));
         });
-        // Redrawn only when the body actually moved a slider, so the panel does
-        // not flicker for the six bodies that pin nothing.
         adoptBody(body);
         voice = customVoice();
         try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom)); } catch (_) {}
+        // Always, not only when a slider moved: which sliders are locked comes
+        // from the body, so Silent has to grey out three of them while pinning
+        // none of their values.
         rebuildTune();
         keepPanelOpen();
         unlockAudio();
@@ -1273,14 +1299,12 @@
   // A name on the left, a state on the right, struck afterwards so the change is
   // heard. One switch, but written as though there could be others.
   // Some bodies cannot be any length: the slider follows rather than fighting it.
+  // A body carries values for some of the macros; taking it adopts those and
+  // leaves the rest where the last person put them.
   function adoptBody(body) {
-    let moved = false;
     MACROS.forEach(({ key }) => {
-      if (body[key] === undefined || custom[key] === body[key]) return;
-      custom[key] = body[key];
-      moved = true;
+      if (body[key] !== undefined) custom[key] = body[key];
     });
-    return moved;
   }
 
   function lockedMacros() {
@@ -1336,7 +1360,7 @@
     let taps = [];
     el.wordmark.addEventListener("click", () => {
       if (cowbell) return;
-      const now = Date.now();
+      const now = clock();
       taps = taps.filter((at) => now - at < WINDOW_MS).concat(now);
       if (taps.length < WANTED) return;
       cowbell = true;
@@ -1353,61 +1377,10 @@
     });
   }
 
-  // ── keeping the screen alive ────────────────────────────────────────────
-  // A phone that sleeps mid-sit stops the animation frame and can throttle the
-  // timer, so the closing bell arrives late or not at all. The wake lock is the
-  // reliable fix; the elapsed-time check on resume is the fallback for when it
-  // is unavailable or dropped.
-  let wakeLock = null;
 
-  async function holdScreen() {
-    try {
-      if ("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen");
-    } catch (_) { /* unsupported or refused; the resume check covers it */ }
-  }
-
-  function releaseScreen() {
-    if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
-  }
-
-  // ── the session ─────────────────────────────────────────────────────────
-  let session = null;
-  let frame = null;
-  const backstops = [];
-
-  const SETTLE_NOTE = "Settle<br>then begin";
-  let noteLingerMs = 30000;
-  let noteTimer = null;
-
-  // Every change to the wording goes through here, so a fade left over from the
-  // last sit cannot overwrite the words the next one just put up.
-  function setNote(html) {
-    clearTimeout(noteTimer);
-    noteTimer = null;
-    el.note.style.opacity = "";
-    el.note.innerHTML = html;
-  }
-
-  // "Sit complete" is an acknowledgement, not a resting state: it stays long
-  // enough to be read on the way back to the cushion, then the circle goes back
-  // to saying what it is for.
-  function settleNoteAfterLinger() {
-    noteTimer = setTimeout(() => {
-      const fade = parseFloat(getComputedStyle(el.sit).getPropertyValue("--note-fade"));
-      el.note.style.opacity = "0";
-      noteTimer = setTimeout(() => {
-        // The words and the page come back together, and at the same speed: the
-        // default fade, not the bell's, since the bell finished half a minute ago.
-        el.sit.style.removeProperty("--bell-fade");
-        el.sit.dataset.phase = "idle";
-        setNote(SETTLE_NOTE);
-      }, fade || 0);
-    }, noteLingerMs);
-  }
-
-  function settings() {
-    return { settleSec: Number(el.rngFirst.value), sitMin: Number(el.rngSit.value) };
-  }
+  // ── the value pickers ───────────────────────────────────────────────────
+  // The other way to set a duration: a scrolling list of round numbers, for
+  // when a ring is the wrong instrument -- a precise value, or a mouse.
 
   // Coarse by 5s in the list, exact on the ring.
   const ITEM_HEIGHT = 44;
@@ -1427,15 +1400,17 @@
       label: (v) => (v ? "last " + v : "all"),
       get: () => showing,
       // Only counts that would actually leave something out, and always "all",
-      // which is both the default and the way back from any of them.
-      values: () => [0].concat([5, 10, 20, 50, 100].filter((n) => n < history.length)),
+      // which is both the default and the way back from any of them. Given the
+      // grid rather than repeating it: two lists of the same numbers, with
+      // nothing making them agree, is one list too many.
+      values: (grid) => [0].concat(grid.filter((n) => n < history.length)),
       set: (v) => setShowing(v) },
   ];
 
   let openPicker = null;
 
   function pickerValues(picker) {
-    if (picker.values) return picker.values();
+    if (picker.values) return picker.values(picker.grid);
     const value = picker.get();
     // A ring drag lands on values the grid does not contain; the odd one out is
     // spliced in rather than silently rounded away.
@@ -1512,24 +1487,208 @@
     });
   }
 
-  function renderDials() {
-    bumpSettle();
+
+  // ── the clock ───────────────────────────────────────────────────────────
+  //
+  // Every deadline in the page is an absolute instant read off this one function,
+  // so a test can hand it a clock it drives and a twenty-minute sit finishes in a
+  // millisecond. Reading the wall clock directly in nine places meant the session
+  // arithmetic could only be asserted to within a tolerance, and a tolerance wide
+  // enough to survive real time passing is wide enough to hide a sit being a
+  // second long. Date.parse elsewhere is untouched: that reads a written-down
+  // date, not the time.
+  let clock = Date.now;
+
+  // ── the session ─────────────────────────────────────────────────────────
+  // One sit, from Begin to the closing bell. Its two deadlines are absolute
+  // instants rather than accumulated intervals, so a throttled frame loop cannot
+  // make a sit drift longer than it was set for.
+
+  let session = null;
+  let frame = null;
+  const backstops = [];
+
+  const SETTLE_NOTE = "Settle<br>then begin";
+  let noteLingerMs = 30000;
+  let noteTimer = null;
+
+  // Every change to the wording goes through here, so a fade left over from the
+  // last sit cannot overwrite the words the next one just put up.
+  function setNote(html) {
+    clearTimeout(noteTimer);
+    noteTimer = null;
+    el.note.style.opacity = "";
+    el.note.innerHTML = html;
+  }
+
+  // "Sit complete" is an acknowledgement, not a resting state: it stays long
+  // enough to be read on the way back to the cushion, then the circle goes back
+  // to saying what it is for.
+  function settleNoteAfterLinger() {
+    noteTimer = setTimeout(() => {
+      const fade = parseFloat(getComputedStyle(el.sit).getPropertyValue("--note-fade"));
+      el.note.style.opacity = "0";
+      noteTimer = setTimeout(() => {
+        // The words and the page come back together, and at the same speed: the
+        // default fade, not the bell's, since the bell finished half a minute ago.
+        el.sit.style.removeProperty("--bell-fade");
+        el.sit.dataset.phase = "idle";
+        setNote(SETTLE_NOTE);
+      }, fade || 0);
+    }, noteLingerMs);
+  }
+
+  function settings() {
+    return { settleSec: Number(el.rngFirst.value), sitMin: Number(el.rngSit.value) };
+  }
+
+
+  function begin() {
+    unlockAudio();
+    holdScreen();
+
     const { settleSec, sitMin } = settings();
-    PICKERS.slice(0, 2).forEach((picker) => {
-      el[picker.button].textContent = picker.label(picker.get());
-    });
-    // The button names what pressing it actually starts. With settling time on the
-    // clock the first thing that happens is settling, not the sit.
-    el.start.textContent = settleSec > 0 ? "Settle" : "Begin";
-    if (!session) {
-      paintDial(DIALS[0], sitMin);
-      paintDial(DIALS[1], settleSec);
+    const now = clock();
+    session = {
+      settleSec, sitMin,
+      startedAt: now,
+      bellAt: now + settleSec * 1000,
+      endAt: now + settleSec * 1000 + sitMin * 60000,
+      rang: false,
+    };
+
+    el.sit.dataset.phase = settleSec > 0 ? "waiting" : "sitting";
+    setNote(settleSec > 0 ? "Settling" : "");
+    el.start.hidden = true;
+    el.cancel.textContent = settleSec > 0 ? "Oops, never mind" : "End Now";
+    el.cancel.hidden = false;
+    closePanel();
+
+    // Absolute deadlines, not accumulated intervals, so a throttled frame loop
+    // cannot make the sit drift longer than it was set for.
+    scheduleBackstops();
+    loop();
+  }
+
+  function scheduleBackstops() {
+    // Re-armed whenever endAt moves: a shortened sit whose backstop still points
+    // at the original time would ring late on a phone whose frame loop is asleep.
+    while (backstops.length) clearTimeout(backstops.pop());
+    const now = clock();
+    backstops.push(setTimeout(() => tick(), Math.max(0, session.bellAt - now) + 40));
+    backstops.push(setTimeout(() => tick(), Math.max(0, session.endAt - now) + 40));
+  }
+
+  function tick() {
+    if (!session) return;
+    const now = clock();
+
+    if (!session.rang && now >= session.bellAt) {
+      session.rang = true;
+      strike();
+      // The page empties over the bell: the fundamental rings for exactly
+      // voice.decaySec seconds, so that is how long the fade takes.
+      setBellFade(voice.decaySec + "s");
+      el.sit.dataset.phase = "sitting";
+      el.cancel.textContent = "End Now";
+      setNote("");
+    }
+
+    if (now >= session.endAt) {
+      strike();
+      finish("complete");
+      return;
+    }
+
+    if (session.rang) {
+      paintDial(DIALS[1], 0);
+      paintDial(DIALS[0], (session.endAt - now) / 60000);   // minutes left, of sixty
+    } else {
+      paintDial(DIALS[0], session.sitMin);                 // still to come
+      paintDial(DIALS[1], (session.bellAt - now) / 1000);   // seconds left, of sixty
     }
   }
+
+  function loop() {
+    tick();
+    if (session) frame = requestAnimationFrame(loop);
+  }
+
+  // Keeping the screen alive. A phone that sleeps mid-sit stops the animation
+  // frame and can throttle the timer, so the closing bell arrives late or not at
+  // all. The wake lock is the reliable fix; the elapsed-time check on resume is
+  // the fallback for when it is unavailable or dropped.
+  let wakeLock = null;
+
+  async function holdScreen() {
+    try {
+      if ("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen");
+    } catch (_) { /* unsupported or refused; the resume check covers it */ }
+  }
+
+  function releaseScreen() {
+    if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+  }
+
+  function finish(outcome) {
+    if (!session) return;
+    const elapsedMs = clock() - session.startedAt;
+    // Both numbers, because a sit dragged short is neither the sit that was set
+    // nor an abandoned one, and the log should not have to pretend it is either.
+    const satMin = session.rang
+      ? Math.max(0, Math.round((clock() - session.bellAt) / 60000))
+      : 0;
+    const record = {
+      at: new Date().toISOString(),
+      settleSec: session.settleSec,
+      sitMin: session.sitMin,
+      satMin,
+      elapsedMs,
+      outcome,
+    };
+
+    // Nothing sat, nothing to record. Walking away during the settle is changing
+    // your mind about starting, and a practice log full of those is noise.
+    const worthKeeping = session.rang;
+
+    session = null;
+    if (frame) cancelAnimationFrame(frame);
+    while (backstops.length) clearTimeout(backstops.pop());
+    releaseScreen();
+
+    // A completed sit rests before it resets: the page stays as empty as it was,
+    // over the length of the closing bell, and settleNoteAfterLinger puts it back.
+    // An early exit rings nothing and has nothing to sit with, so it returns now.
+    if (outcome === "complete") {
+      setBellFade(voice.decaySec + "s");
+      el.sit.dataset.phase = "complete";
+      setNote("Sit complete");
+      settleNoteAfterLinger();
+    } else {
+      el.sit.style.removeProperty("--bell-fade");
+      el.sit.dataset.phase = "idle";
+      setNote(SETTLE_NOTE);
+    }
+    el.start.hidden = false;
+    el.cancel.hidden = true;
+    renderDials();
+
+    if (worthKeeping) {
+      // Into the list before it is written out: save() serialises history,
+      // so unshifting afterwards left the newest sit on the page but out of
+      // localStorage until some later save happened to pick it up.
+      history.unshift(record);
+      countSit(record);
+      save(record);
+      renderLog();
+    }
+  }
+
 
   // ── dragging a tip ──────────────────────────────────────────────────────
   // Which ring you grabbed is decided by how far from the centre you touched, so
   // the whole annulus is a target rather than just the eight-pixel grip.
+
   let dragging = null;
   let sitDrag = null;
   const LEARNED_KEY = "two-bells:learned";
@@ -1628,7 +1787,7 @@
     const shifted = sitDrag.endAt + delta / 360 * RING_UNITS * 60000;
     // Never later than where it started -- this shortens a sit, it does not edit
     // the clock -- and never earlier than now.
-    session.endAt = Math.max(Date.now(), Math.min(sitDrag.endAt, shifted));
+    session.endAt = Math.max(clock(), Math.min(sitDrag.endAt, shifted));
     scheduleBackstops();
     tick();
   }
@@ -1681,130 +1840,6 @@
     }
   });
 
-  function begin() {
-    unlockAudio();
-    holdScreen();
-
-    const { settleSec, sitMin } = settings();
-    const now = Date.now();
-    session = {
-      settleSec, sitMin,
-      startedAt: now,
-      bellAt: now + settleSec * 1000,
-      endAt: now + settleSec * 1000 + sitMin * 60000,
-      rang: false,
-    };
-
-    el.sit.dataset.phase = settleSec > 0 ? "waiting" : "sitting";
-    setNote(settleSec > 0 ? "Settling" : "");
-    el.start.hidden = true;
-    el.cancel.textContent = settleSec > 0 ? "Oops, never mind" : "End Now";
-    el.cancel.hidden = false;
-    closePanel();
-
-    // Absolute deadlines, not accumulated intervals, so a throttled frame loop
-    // cannot make the sit drift longer than it was set for.
-    scheduleBackstops();
-    loop();
-  }
-
-  function scheduleBackstops() {
-    // Re-armed whenever endAt moves: a shortened sit whose backstop still points
-    // at the original time would ring late on a phone whose frame loop is asleep.
-    while (backstops.length) clearTimeout(backstops.pop());
-    const now = Date.now();
-    backstops.push(setTimeout(() => tick(), Math.max(0, session.bellAt - now) + 40));
-    backstops.push(setTimeout(() => tick(), Math.max(0, session.endAt - now) + 40));
-  }
-
-  function tick() {
-    if (!session) return;
-    const now = Date.now();
-
-    if (!session.rang && now >= session.bellAt) {
-      session.rang = true;
-      strike();
-      // The page empties over the bell: the fundamental rings for exactly
-      // voice.decaySec seconds, so that is how long the fade takes.
-      setBellFade(voice.decaySec + "s");
-      el.sit.dataset.phase = "sitting";
-      el.cancel.textContent = "End Now";
-      setNote("");
-    }
-
-    if (now >= session.endAt) {
-      strike();
-      finish("complete");
-      return;
-    }
-
-    if (session.rang) {
-      paintDial(DIALS[1], 0);
-      paintDial(DIALS[0], (session.endAt - now) / 60000);   // minutes left, of sixty
-    } else {
-      paintDial(DIALS[0], session.sitMin);                 // still to come
-      paintDial(DIALS[1], (session.bellAt - now) / 1000);   // seconds left, of sixty
-    }
-  }
-
-  function loop() {
-    tick();
-    if (session) frame = requestAnimationFrame(loop);
-  }
-
-  function finish(outcome) {
-    if (!session) return;
-    const elapsedMs = Date.now() - session.startedAt;
-    // Both numbers, because a sit dragged short is neither the sit that was set
-    // nor an abandoned one, and the log should not have to pretend it is either.
-    const satMin = session.rang
-      ? Math.max(0, Math.round((Date.now() - session.bellAt) / 60000))
-      : 0;
-    const record = {
-      at: new Date().toISOString(),
-      settleSec: session.settleSec,
-      sitMin: session.sitMin,
-      satMin,
-      elapsedMs,
-      outcome,
-    };
-
-    // Nothing sat, nothing to record. Walking away during the settle is changing
-    // your mind about starting, and a practice log full of those is noise.
-    const worthKeeping = session.rang;
-
-    session = null;
-    if (frame) cancelAnimationFrame(frame);
-    while (backstops.length) clearTimeout(backstops.pop());
-    releaseScreen();
-
-    // A completed sit rests before it resets: the page stays as empty as it was,
-    // over the length of the closing bell, and settleNoteAfterLinger puts it back.
-    // An early exit rings nothing and has nothing to sit with, so it returns now.
-    if (outcome === "complete") {
-      setBellFade(voice.decaySec + "s");
-      el.sit.dataset.phase = "complete";
-      setNote("Sit complete");
-      settleNoteAfterLinger();
-    } else {
-      el.sit.style.removeProperty("--bell-fade");
-      el.sit.dataset.phase = "idle";
-      setNote(SETTLE_NOTE);
-    }
-    el.start.hidden = false;
-    el.cancel.hidden = true;
-    renderDials();
-
-    if (worthKeeping) {
-      // Into the list before it is written out: save() serialises history,
-      // so unshifting afterwards left the newest sit on the page but out of
-      // localStorage until some later save happened to pick it up.
-      history.unshift(record);
-      countSit(record);
-      save(record);
-      renderLog();
-    }
-  }
 
   // ── the practice log ────────────────────────────────────────────────────
   // Kept in the artifact's own store when it is reachable, so the log follows
@@ -1891,7 +1926,7 @@
   // because the people trying it were asked to and their notes are the point.
   // Read at render time, so a tab left open crosses the date on its own.
   const BETA_UNTIL = Date.parse("2026-09-20T23:59:59");
-  const contactFrom = () => (Date.now() < BETA_UNTIL ? 5 : 10);
+  const contactFrom = () => (clock() < BETA_UNTIL ? 5 : 10);
 
   // Copy and Contact are earned by practice, not by the length of the list at
   // this instant. Pruning tidies the log; it does not undo the sitting, and
@@ -2098,15 +2133,15 @@
       showing,
       totals: readTotals(),
       rang: session ? session.rang : null,
-      msToBell: session ? session.bellAt - Date.now() : null,
-      msToEnd: session ? session.endAt - Date.now() : null,
+      msToBell: session ? session.bellAt - clock() : null,
+      msToEnd: session ? session.endAt - clock() : null,
     }),
 
     // The deadlines are absolute, so bringing them forward is all it takes; the
     // frame loop and the backstops cannot tell the difference.
     hurry: (deadlines) => {
       if (!session) return false;
-      const now = Date.now();
+      const now = clock();
       if (deadlines.bellIn !== undefined) session.bellAt = now + deadlines.bellIn;
       if (deadlines.endIn !== undefined) session.endAt = now + deadlines.endIn;
       scheduleBackstops();
@@ -2123,6 +2158,10 @@
     internals: {
       minutesSat, describe, toTSV, mergeHistory, readTotals, raiseTotals,
       setNoteLinger: (ms) => { noteLingerMs = ms; },
+      // A clock the test drives, or null for the real one. Every deadline is an
+      // absolute instant read off this, so a sit of any length can be walked
+      // through instant by instant with nothing waiting on real time.
+      setClock: (fn) => { clock = fn || Date.now; },
       contactFrom, isQuotaError, persistLocal, loadLocal,
       getHistory: () => history,
       setHistory: (records) => { history = records; },

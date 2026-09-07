@@ -254,11 +254,13 @@ test("who gets offered vibration", async (t) => {
 
 test("when Contact appears", async (t) => {
   const { seam } = loadPage();
-  const { contactFrom } = seam.internals;
+  const { contactFrom, setClock } = seam.internals;
+  // Through the page's own clock seam. Reassigning global Date.now worked only
+  // while every call site read it afresh; the page holds one reference now, which
+  // is what lets a test drive time rather than hope nothing else reads it.
   const at = (iso, fn) => {
-    const real = Date.now;
-    Date.now = () => Date.parse(iso);
-    try { return fn(); } finally { Date.now = real; }
+    setClock(() => Date.parse(iso));
+    try { return fn(); } finally { setClock(null); }
   };
 
   await t.test("five sits during the beta", () => {
