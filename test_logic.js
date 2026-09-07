@@ -20,7 +20,7 @@ const IN_PACIFIC = new Date(2026, 8, 6, 21, 5).getTimezoneOffset() === 420;
 function sit(overrides = {}) {
   return {
     at: new Date(2026, 8, 6, 9, 0).toISOString(),
-    first: 30, sit: 20, sat: 20, elapsedMs: 1230000, outcome: "complete",
+    settle: 30, sit: 20, sat: 20, elapsedMs: 1230000, outcome: "complete",
     ...overrides,
   };
 }
@@ -159,11 +159,6 @@ test("the running totals", async (t) => {
     assert.deepEqual(seam.internals.readTotals(), { sits: 500, minutes: 12000 });
   });
 
-  await t.test("inherit the count from the key that only knew how many", () => {
-    const { seam } = loadPage({ seed: { "two-bells:seen": "42" } });
-    assert.deepEqual(seam.internals.readTotals(), { sits: 42, minutes: 0 });
-  });
-
   await t.test("survive nonsense in storage", () => {
     const { seam } = loadPage({ seed: { "two-bells:totals": "{not json" } });
     assert.deepEqual(seam.internals.readTotals(), { sits: 0, minutes: 0 });
@@ -220,16 +215,6 @@ test("who gets offered vibration", async (t) => {
   await t.test("and stays last once the cowbell turns up", () => {
     const { bodies } = panel({ seed: { "two-bells:cowbell": "1" } });
     assert.deepEqual(bodies.slice(-2), ["Cowbell", "Silent"], bodies.join(", "));
-  });
-
-  await t.test("a stored Silent flag becomes the Silent body", () => {
-    const { seam, storage } = loadPage({ seed: {
-      "two-bells:custom": JSON.stringify({ silent: true, timbre: "church" }),
-      "two-bells:voice": "custom" } });
-    assert.equal(seam.getState().voice, "custom");
-    const kept = JSON.parse(storage.getItem("two-bells:custom"));
-    assert.equal(kept.timbre, "silent");
-    assert.ok(!("silent" in kept), JSON.stringify(kept));
   });
 
   await t.test("and a laptop will not buzz on a setting carried from a phone", () => {

@@ -199,7 +199,7 @@ test("a tuned bell is not lost by trying another", SUITE, async (t) => {
     // The fade is set from the voice's own decay, so the page says which bell it
     // thinks it is ringing without anyone having to listen to it.
     const seen = run(TUNE_RING_TO_THREE + `
-      const ringWas = JSON.parse(localStorage.getItem("two-bells:custom")).ring;
+      const ringWas = JSON.parse(localStorage.getItem("two-bells:custom")).duration;
       pick("bowl");
       await wait(80);
       pick("custom");
@@ -312,23 +312,23 @@ test("more cowbell", SUITE, async (t) => {
       const sliderFor = (label) => Array.from(document.querySelectorAll(".tune .tune-row"))
         .find((r) => r.querySelector(".dial-label").textContent === label)
         .querySelector(".slider").value;
-      const pinned = { ring: sliderFor("Duration"), shimmer: sliderFor("Shimmer"),
+      const pinned = { duration: sliderFor("Duration"), shimmer: sliderFor("Shimmer"),
                        bright: sliderFor("Brightness") };
 
       // Back to a body that pins nothing, then to the cowbell again by hand.
       document.querySelector('[data-timbre="church"]').click();
       await wait(120);
-      const loosened = { ring: sliderFor("Duration"), shimmer: sliderFor("Shimmer") };
+      const loosened = { duration: sliderFor("Duration"), shimmer: sliderFor("Shimmer") };
       document.querySelector('[data-timbre="church"]').parentElement
               .querySelector('[data-timbre="cowbell"]').click();
       await wait(120);
-      return { pinned, loosened, again: { ring: sliderFor("Duration"), shimmer: sliderFor("Shimmer"),
+      return { pinned, loosened, again: { duration: sliderFor("Duration"), shimmer: sliderFor("Shimmer"),
                                           bright: sliderFor("Brightness") },
                stored: JSON.parse(localStorage.getItem("two-bells:custom")) };
     `);
-    assert.deepEqual(seen.pinned, { ring: "1.25", shimmer: "0", bright: "0" });
-    assert.deepEqual(seen.again, { ring: "1.25", shimmer: "0", bright: "0" });
-    assert.equal(seen.stored.ring, 1.25);
+    assert.deepEqual(seen.pinned, { duration: "1.25", shimmer: "0", bright: "0" });
+    assert.deepEqual(seen.again, { duration: "1.25", shimmer: "0", bright: "0" });
+    assert.equal(seen.stored.duration, 1.25);
     assert.equal(seen.stored.shimmer, 0);
     assert.equal(seen.stored.bright, 0);
   });
@@ -414,7 +414,7 @@ test("the log and its tools", SUITE, async (t) => {
       const at = Date.now();
       seam.seed(Array.from({ length: 40 }, (_, i) => ({
         at: new Date(at - i * 3600000).toISOString(),
-        first: 30, sit: 20, sat: 20, elapsedMs: 1230000, outcome: "complete" })));
+        settle: 30, sit: 20, sat: 20, elapsedMs: 1230000, outcome: "complete" })));
       const all = { rows: rows(), stored: stored() };
       $("pick-show").click();
       await wait(120);
@@ -437,7 +437,7 @@ test("the log and its tools", SUITE, async (t) => {
       const at = Date.now();
       seam.seed(Array.from({ length: 8 }, (_, i) => ({
         at: new Date(at - i * 3600000).toISOString(),
-        first: 30, sit: 20, sat: 20, elapsedMs: 1230000, outcome: "complete" })));
+        settle: 30, sit: 20, sat: 20, elapsedMs: 1230000, outcome: "complete" })));
       $("pick-show").click();
       await wait(150);
       const picker = $("picker-show").getBoundingClientRect();
@@ -459,7 +459,7 @@ test("the log and its tools", SUITE, async (t) => {
       const at = Date.now();
       seam.seed(Array.from({ length: 8 }, (_, i) => ({
         at: new Date(at - i * 3600000).toISOString(),
-        first: 30, sit: 20, sat: 20, elapsedMs: 1230000, outcome: "complete" })));
+        settle: 30, sit: 20, sat: 20, elapsedMs: 1230000, outcome: "complete" })));
       $("copy").click();
       await wait(150);
       const lines = copied.split("\\n");

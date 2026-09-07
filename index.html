@@ -724,9 +724,9 @@
   // per unit on either. The two radii are the two dials.
   const RING_UNITS = 60;
   const DIALS = [
-    { key: "sit",   radius: 90, arc: "arcSit",   grip: "gripSit",
+    { name: "meditate", radius: 90, arc: "arcSit",   grip: "gripSit",
       halo: "haloSit",   range: "rngSit" },
-    { key: "first", radius: 66, arc: "arcFirst", grip: "gripFirst",
+    { name: "settle",   radius: 66, arc: "arcFirst", grip: "gripFirst",
       halo: "haloFirst", range: "rngFirst" },
   ];
 
@@ -884,10 +884,10 @@
   // what a struck STRING produces. That is why they read as piano. What is left is
   // inharmonic, which is what struck metal does, and Custom stays in that territory.
   const PRESETS = [
-    { id: "bowl",  label: "Bowl",  first: 210, decay: 8.0,
+    { id: "bowl",  label: "Bowl",  root: 210, decay: 8.0,
       damping: 0.95, detune: 0.0035, strike: 0.20, bright: 1,
       partials: [[1, 0.50], [2.68, 0.20], [5.15, 0.09], [8.40, 0.04]] },
-    { id: "chime", label: "Chime", first: 440, decay: 6.0,
+    { id: "chime", label: "Chime", root: 440, decay: 6.0,
       damping: 1.05, detune: 0.0012, strike: 0.26, bright: 1,
       partials: [[1, 0.38], [2.76, 0.16], [5.40, 0.07], [8.93, 0.03]] },
   ];
@@ -897,10 +897,10 @@
   // of it is what anyone wants at the start of a sit.
   const MACROS = [
     { key: "pitch",   label: "Pitch",      min: 110, max: 660, step: 5,   unit: "Hz" },
-    // Stored as `ring` still -- the word on disk is on phones already, and a
-    // migration to match a label is a poor trade. "Duration" is the better word
-    // on screen because it is still true of the Silent body, where nothing rings.
-    { key: "ring",    label: "Duration",   min: 0.5, max: 14,  step: 0.25, unit: "s" },
+    // "Duration" rather than "Ring" because it is still true of the Silent body,
+    // where nothing rings and the number still decides how long the page takes
+    // to empty.
+    { key: "duration", label: "Duration",  min: 0.5, max: 14,  step: 0.25, unit: "s" },
     { key: "bright",  label: "Brightness", min: 0,   max: 100, step: 1,   unit: "" },
     { key: "shimmer", label: "Shimmer",    min: 0,   max: 100, step: 1,   unit: "" },
   ];
@@ -956,7 +956,7 @@
     // narrow band, gone in a third of a second. Nothing to tune, hence `fixed`.
     { id: "cowbell", label: "Cowbell", hidden: true, fixed: true, synth: "cowbell",
       damping: 2.60, hit: 2.6, hitBand: 4.5,
-      ring: 1.25, bright: 0, shimmer: 0,
+      duration: 1.25, bright: 0, shimmer: 0,
       partials: [[1, 0.30], [3.10, 0.22]] },
   ];
 
@@ -973,7 +973,7 @@
   }
 
   const CUSTOM_KEY = "two-bells:custom";
-  let custom = { pitch: 330, ring: 10, bright: 60, shimmer: 20, timbre: "church",
+  let custom = { pitch: 330, duration: 10, bright: 60, shimmer: 20, timbre: "church",
                  vibrate: false };
 
   // Desktop Chrome ships navigator.vibrate as a no-op, so the function existing
@@ -995,13 +995,15 @@
     const body = currentBody();
     return {
       id: "custom", label: "Custom",
-      first: custom.pitch,
-      decay: custom.ring,
+      root: custom.pitch,
+      decay: custom.duration,
       synth: body.synth,
       vibrate: CAN_VIBRATE && custom.vibrate,
       // The body sets the relative decay rates; Brightness leans on them.
       damping: body.damping - b * 0.35,
-      detune: (custom.shimmer / 100) * 0.006,
+      // A quarter less spread than it was: at the top of the range the beating
+      // was doing more than shimmering.
+      detune: (custom.shimmer / 100) * 0.0045,
       strike: (0.14 + b * 0.30) * (body.hit || 1),
       hitBand: body.hitBand || 7,
       bright: 0.55 + b * 0.9,
@@ -1045,7 +1047,7 @@
     if (!audio) return;
     if (voice.synth === "cowbell") return strikeCowbell();
     const now = audio.currentTime;
-    const root = voice.first;
+    const root = voice.root;
     const length = voice.decay;
 
     // A brightness envelope over the whole strike. The top end belongs to the
@@ -1157,13 +1159,6 @@
       const saved = JSON.parse(localStorage.getItem(CUSTOM_KEY) || "null");
       if (saved) custom = Object.assign(custom, saved);
     } catch (_) {}
-    // Silent used to be a flag beside the body rather than one of them. Migrated
-    // and written back, so one setting stops having two shapes on disk.
-    if ("silent" in custom) {
-      if (custom.silent) custom.timbre = "silent";
-      delete custom.silent;
-      try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom)); } catch (_) {}
-    }
     try {
       cowbell = localStorage.getItem(COWBELL_KEY) === "1";
     } catch (_) {}
@@ -1402,7 +1397,7 @@
   }
 
   function settings() {
-    return { first: Number(el.rngFirst.value), sit: Number(el.rngSit.value) };
+    return { settle: Number(el.rngFirst.value), sit: Number(el.rngSit.value) };
   }
 
   // Coarse by 5s in the list, exact on the ring.
@@ -1510,16 +1505,16 @@
 
   function renderDials() {
     bumpSettle();
-    const { first, sit } = settings();
+    const { settle, sit } = settings();
     PICKERS.slice(0, 2).forEach((picker) => {
       el[picker.button].textContent = picker.label(picker.get());
     });
     // The button names what pressing it actually starts. With settling time on the
     // clock the first thing that happens is settling, not the sit.
-    el.start.textContent = first > 0 ? "Settle" : "Begin";
+    el.start.textContent = settle > 0 ? "Settle" : "Begin";
     if (!session) {
       paintDial(DIALS[0], sit);
-      paintDial(DIALS[1], first);
+      paintDial(DIALS[1], settle);
     }
   }
 
@@ -1550,7 +1545,7 @@
     if (!saved) return;
     // Clamped against the inputs' own bounds rather than trusted: a stored value
     // from an older range would otherwise put a handle off the ring.
-    [["first", "rngFirst"], ["sit", "rngSit"]].forEach(([key, id]) => {
+    [["settle", "rngFirst"], ["sit", "rngSit"]].forEach(([key, id]) => {
       const range = el[id];
       const value = Number(saved[key]);
       if (!Number.isFinite(value)) return;
@@ -1672,20 +1667,20 @@
     unlockAudio();
     holdScreen();
 
-    const { first, sit } = settings();
+    const { settle, sit } = settings();
     const now = Date.now();
     session = {
-      first, sit,
+      settle, sit,
       startedAt: now,
-      bellAt: now + first * 1000,
-      endAt: now + first * 1000 + sit * 60000,
+      bellAt: now + settle * 1000,
+      endAt: now + settle * 1000 + sit * 60000,
       rang: false,
     };
 
-    el.sit.dataset.phase = first > 0 ? "waiting" : "sitting";
-    setNote(first > 0 ? "Settling" : "");
+    el.sit.dataset.phase = settle > 0 ? "waiting" : "sitting";
+    setNote(settle > 0 ? "Settling" : "");
     el.start.hidden = true;
-    el.cancel.textContent = first > 0 ? "Oops, never mind" : "End Now";
+    el.cancel.textContent = settle > 0 ? "Oops, never mind" : "End Now";
     el.cancel.hidden = false;
     closePanel();
 
@@ -1749,7 +1744,7 @@
       : 0;
     const record = {
       at: new Date().toISOString(),
-      first: session.first,
+      settle: session.settle,
       sit: session.sit,
       sat,
       elapsedMs,
@@ -1793,7 +1788,6 @@
   // between phone and laptop and survives clearing site data; localStorage
   // holds the same record for when it is not.
   const KEY = "two-bells:log";
-  const LEGACY_KEY = "two-bells:last";
   // A year of sitting daily, plus a month to get round to exporting it. At about
   // a hundred bytes a sit that is some forty kilobytes -- far enough inside the
   // budget that the quota trim below should never be reached, and it is there
@@ -1885,14 +1879,12 @@
   // browser that practised before this counter existed, and a store that syncs a
   // fuller history than this device has seen, both end up counted.
   const TOTALS_KEY = "two-bells:totals";
-  const COUNT_ONLY_KEY = "two-bells:seen";
 
   function readTotals() {
     try {
       const raw = JSON.parse(localStorage.getItem(TOTALS_KEY) || "null");
       if (raw) return { sits: Number(raw.sits) || 0, minutes: Number(raw.minutes) || 0 };
-      // What this replaces knew how many sits there had been, never how long.
-      return { sits: Number(localStorage.getItem(COUNT_ONLY_KEY)) || 0, minutes: 0 };
+      return { sits: 0, minutes: 0 };
     } catch (_) {
       return { sits: 0, minutes: 0 };
     }
@@ -1966,7 +1958,7 @@
       const iso = when.getFullYear() + "-" + pad(when.getMonth() + 1) + "-" +
                   pad(when.getDate());
       const clock = pad(when.getHours()) + ":" + pad(when.getMinutes());
-      return [iso, clock, record.first, record.sit, minutesSat(record),
+      return [iso, clock, record.settle, record.sit, minutesSat(record),
               record.outcome].join("\t");
     });
     // After a blank line so a spreadsheet keeps them out of the table. Every row
@@ -2031,10 +2023,6 @@
       const raw = localStorage.getItem(KEY);
       if (raw) {
         history = JSON.parse(raw) || [];
-      } else {
-        // One record under the old key, from before this kept a list.
-        const legacy = localStorage.getItem(LEGACY_KEY);
-        if (legacy) history = [JSON.parse(legacy)];
       }
     } catch (_) {
       history = [];
@@ -2080,7 +2068,7 @@
       phase: el.sit.dataset.phase,
       note: el.note.innerHTML,
       voice: voice.id,
-      first: Number(el.rngFirst.value),
+      settle: Number(el.rngFirst.value),
       sit: Number(el.rngSit.value),
       rows: history.length,
       shown: shownRows().length,

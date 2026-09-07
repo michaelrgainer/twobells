@@ -53,20 +53,20 @@ test("the page wires itself up", async (t) => {
 test("what the page opens on", async (t) => {
   await t.test("forty seconds to settle, twenty minutes to sit", () => {
     const { seam } = loadPage();
-    assert.deepEqual([seam.getState().first, seam.getState().sit], [40, 20]);
+    assert.deepEqual([seam.getState().settle, seam.getState().sit], [40, 20]);
   });
 
   await t.test("durations already chosen are restored", () => {
     const { seam } = loadPage({ seed: {
-      "two-bells:durations": JSON.stringify({ first: 15, sit: 45 }) } });
-    assert.deepEqual([seam.getState().first, seam.getState().sit], [15, 45]);
+      "two-bells:durations": JSON.stringify({ settle: 15, sit: 45 }) } });
+    assert.deepEqual([seam.getState().settle, seam.getState().sit], [15, 45]);
   });
 
   await t.test("and a stored duration outside the dial is pulled back onto it", () => {
     // A value saved when the ranges were 0-55 and 5-60 would otherwise put a
     // handle somewhere the ring does not go.
     const { seam } = loadPage({ seed: {
-      "two-bells:durations": JSON.stringify({ first: 999, sit: 0 }) } });
-    assert.deepEqual([seam.getState().first, seam.getState().sit], [59, 1]);
+      "two-bells:durations": JSON.stringify({ settle: 999, sit: 0 }) } });
+    assert.deepEqual([seam.getState().settle, seam.getState().sit], [59, 1]);
   });
 });
