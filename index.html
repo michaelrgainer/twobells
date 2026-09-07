@@ -600,9 +600,8 @@
   .sit[data-phase="complete"] :is(.log, .log-tools) { opacity: 0.5; }
   .sit[data-phase="complete"] .controls { opacity: 0.5; pointer-events: none; }
 
-  /* And the rings with them. Everything else was already inert for any phase
-     but idle; the rings were not, because during a sit they are the one thing
-     still worth dragging. Once it is over they are not that either. */
+  /* The rings take a drag during a sit, to shorten it. Afterwards there is
+     nothing to shorten. */
   .sit[data-phase="complete"] #rings { pointer-events: none; }
 
   /* The rings are dimmed rather than gone: the shape is worth keeping under the
@@ -780,16 +779,8 @@
     el[dial.halo].setAttribute("cy", y);
   }
 
-  // Measured, not guessed. A public-domain recording (Wikimedia Commons,
-  // Cowbell.ogg, PD-user Freddythehat) has fourteen strikes in it; the longest was
-  // analysed for its mode frequencies, their relative levels, and how long each
-  // one takes to fall 20 dB. None of the recording is here -- only the numbers it
-  // gave up, which is why this is still a page and not a payload.
-  //
-  // Three things the numbers said that no amount of fiddling was going to find:
-  // the loudest thing in a cowbell is not its fundamental but a mode at 2.73x it;
-  // the low modes die FIRST, which is backwards from every bell above; and 47% of
-  // the energy is spent in the first twelve milliseconds, so it is mostly stick.
+  // Mode frequencies, levels and decay times measured from recordings of real
+  // cowbells. No audio ships; these numbers are all that is needed.
   const COWBELL_ROOT_HZ = 718;
   const COWBELL_MODES = [
     // ratio, level, seconds to -20 dB
@@ -804,15 +795,13 @@
     [6.611, 0.092, 0.15],
   ];
 
-  // Zero is the recording; above it, each mode is weighted by its own ratio, so
-  // the top comes up and the body goes down. It sits at zero because this bell is
-  // already bright where it counts -- not in its modes, which are led by the
-  // fundamental, but in the stick, whose energy is centred above 5 kHz.
+  // Weights each mode by its own ratio: above zero the top comes up and the body
+  // goes down. Zero here, since the brightness is in the stick, not the modes.
   const COWBELL_TIN = 0;
 
-  // And a second knob for how long it hangs about. One is the recording; below
-  // it, every mode is cut in the same proportion, so the balance between them
-  // stays where the measurement put it.
+  // How long it hangs about. Below one, every mode is cut in the same proportion,
+  // keeping the measured balance between them. Short of one: four taps inside
+  // seven hundred milliseconds turn to mud at full length.
   const COWBELL_HANG = 0.60;
   const COWBELL_LEVELS = (() => {
     const weighted = COWBELL_MODES.map(([ratio, level]) => level * Math.pow(ratio, COWBELL_TIN));
@@ -821,11 +810,9 @@
   })();
 
   // Two, a pause, then two more with some of the metal taken off them. A cowbell
-  // that strikes once is a doorbell; the figure is what makes it a cowbell, and a
-  // figure is a rhythm rather than anybody's recording.
+  // that strikes once is a doorbell.
   // Strike, strike, half a beat of nothing, strike, strike. The second pair is
-  // duller, and the two of them differ from each other: nobody hits the same spot
-  // twice, and a cowbell struck an inch further along is a slightly different bell.
+  // duller, and the two differ: a cowbell struck an inch along is a different bell.
   const TAP_SEC = 0.20;
   const COWBELL_FIGURE = [
     // offset, level, brightness, where it was hit
@@ -865,9 +852,8 @@
       osc.stop(now + end + 0.02);
     });
 
-    // Most of the sound, not half of it: 72% of the energy is spent in the first
-    // ten milliseconds, centred above 5 kHz. A cowbell is a stick hitting metal
-    // and the metal is the smaller half of that.
+    // Most of the sound: 72% of the energy inside ten milliseconds, centred above
+    // 5 kHz. A cowbell is a stick hitting metal, and the stick is the louder half.
     if (!noiseBuffer) noiseBuffer = makeNoise();
     const hit = audio.createBufferSource();
     const band = audio.createBiquadFilter();
@@ -965,17 +951,12 @@
     // you is the stick rather than the metal -- hence the steep damping, the loud
     // wide transient, and the ring and shimmer it pins on the way in. Ten seconds
     // of shimmering cowbell would be a different instrument, and not a funny one.
-    // The absence of a body is still an answer to what it sounds like, so it
-    // belongs in the list rather than beside it as a switch. Duration stays live:
-    // how
-    // long the page takes to empty is a real choice even when nothing is heard.
+    // Silence is an answer to what it sounds like, so it belongs among the
+    // bodies. Duration stays live: it sets how long the page takes to empty.
     { id: "silent",  label: "Silent",  synth: "silent", last: true,
       fixed: ["pitchHz", "brightPct", "shimmerPct"], damping: 1, partials: [] },
-    // Not a bell with strange partials -- its own noise, with its own generator.
-    // Everything else here is a fundamental plus overtones, which is why every
-    // attempt to reach a cowbell that way sounded like a short bell: nobody hears
-    // a cowbell as a pitch. Two square waves a rough fourth apart, through a
-    // narrow band, gone in a third of a second. Nothing to tune, hence `fixed`.
+    // Its own generator: nobody hears a cowbell as a pitch, so a fundamental plus
+    // overtones cannot reach one. Nothing here is tunable, hence `fixed`.
     { id: "cowbell", label: "Cowbell", hidden: true, fixed: true, synth: "cowbell",
       damping: 2.60, hit: 2.6, hitBand: 4.5,
       durationSec: 1.25, brightPct: 0, shimmerPct: 0,
@@ -1667,8 +1648,7 @@
     // Suppressed first, and whether or not a ring was hit: a press that lands in
     // the hole would otherwise begin a native text-selection drag.
     event.preventDefault();
-    // The rest after a sit answers to nothing. CSS says so too, but a synthesised
-    // event skips hit-testing and would otherwise still land here.
+    // Belt and braces with the CSS, which a synthesised event would skip.
     if (el.sit.dataset.phase === "complete") return;
     // Mid-sit, only the outer ring answers, and only to shorten.
     if (session && !session.rang) return;
