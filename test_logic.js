@@ -218,11 +218,37 @@ test("who gets offered vibration", async (t) => {
   });
 
   await t.test("and a laptop will not buzz on a setting carried from a phone", () => {
-    const { seam } = loadPage({ seed: {
+    // Asserted by ringing it, not by looking at navigator: desktop Chrome HAS
+    // navigator.vibrate, so the old check -- that the function was absent -- was
+    // a fact about the stub rather than about the page, and passed either way.
+    const carried = { "two-bells:custom": JSON.stringify({ vibrate: true }),
+                      "two-bells:voice": "custom" };
+    const laptop = loadPage({ touch: false, seed: carried });
+    laptop.fire("start", "click");
+    laptop.seam.hurry({ bellIn: -1, endIn: 60000 });
+    laptop.document.visibilityState = "visible";
+    laptop.fire(laptop.document, "visibilitychange");
+    assert.deepEqual(laptop.vibrations, []);
+  });
+
+  await t.test("and a phone does buzz, so the check is not just always false", () => {
+    const phone = loadPage({ touch: true, seed: {
       "two-bells:custom": JSON.stringify({ vibrate: true }),
       "two-bells:voice": "custom" } });
-    assert.equal(seam.getState().voice, "custom");
-    assert.equal(global.navigator.vibrate, undefined);
+    phone.fire("start", "click");
+    phone.seam.hurry({ bellIn: -1, endIn: 60000 });
+    phone.document.visibilityState = "visible";
+    phone.fire(phone.document, "visibilitychange");
+    assert.deepEqual(phone.vibrations, [[30, 40, 160]]);
+  });
+
+  await t.test("a phone that has not asked for it stays quiet", () => {
+    const phone = loadPage({ touch: true });
+    phone.fire("start", "click");
+    phone.seam.hurry({ bellIn: -1, endIn: 60000 });
+    phone.document.visibilityState = "visible";
+    phone.fire(phone.document, "visibilitychange");
+    assert.deepEqual(phone.vibrations, []);
   });
 });
 
@@ -313,5 +339,106 @@ test("recognising a full browser", async (t) => {
   await t.test("and not by anything else", () => {
     assert.ok(!isQuotaError(new TypeError("undefined is not a function")));
     assert.ok(!isQuotaError(null));
+  });
+});
+
+
+test("what the totals remember", async (t) => {
+  const totals = (opts) => loadPage(opts).seam.internals;
+
+  await t.test("a higher figure raises them", () => {
+    const page = loadPage({ seed: { "two-bells:totals": '{"sits":3,"minutes":60}' } });
+    page.seam.internals.raiseTotals(5, 100);
+    assert.deepEqual(page.seam.internals.readTotals(), { sits: 5, minutes: 100 });
+  });
+
+  await t.test("the same figures change nothing", () => {
+    // They are a high-water mark: equal is not higher, so there is nothing to do.
+    const page = loadPage({ seed: { "two-bells:totals": '{"sits":3,"minutes":60}' } });
+    const before = page.storage.getItem("two-bells:totals");
+    page.seam.internals.raiseTotals(3, 60);
+    assert.equal(page.storage.getItem("two-bells:totals"), before);
+  });
+
+  await t.test("a lower figure cannot pull them down", () => {
+    const page = loadPage({ seed: { "two-bells:totals": '{"sits":9,"minutes":200}' } });
+    page.seam.internals.raiseTotals(2, 10);
+    assert.deepEqual(page.seam.internals.readTotals(), { sits: 9, minutes: 200 });
+  });
+
+  await t.test("one figure higher raises only that one", () => {
+    const page = loadPage({ seed: { "two-bells:totals": '{"sits":9,"minutes":200}' } });
+    page.seam.internals.raiseTotals(20, 10);
+    assert.deepEqual(page.seam.internals.readTotals(), { sits: 20, minutes: 200 });
+  });
+});
+
+
+test("joining two copies of a practice log", async (t) => {
+  const merge = (page, records) => {
+    page.seam.internals.mergeHistory(records);
+    return page.seam.internals.getHistory();
+  };
+
+  await t.test("a record with no timestamp is not a record", () => {
+    const page = loadPage();
+    assert.deepEqual(merge(page, [{ sitMin: 20 }]), []);
+  });
+
+  await t.test("nor is nothing at all", () => {
+    // The store is someone else's write, so it is not assumed to be well formed.
+    const page = loadPage();
+    assert.deepEqual(merge(page, [null, undefined, 0, "", { at: null }]), []);
+  });
+
+  await t.test("and the good ones in the same batch still land", () => {
+    const page = loadPage();
+    const good = { at: "2026-01-01T09:00:00.000Z", sitMin: 20, satMin: 20,
+                   settleSec: 40, elapsedMs: 1200000, outcome: "complete" };
+    assert.deepEqual(merge(page, [null, good, { sitMin: 5 }]).length, 1);
+  });
+
+  await t.test("the same timestamp twice is one sit", () => {
+    const page = loadPage();
+    const one = { at: "2026-01-01T09:00:00.000Z", sitMin: 20, satMin: 20,
+                  settleSec: 40, elapsedMs: 1200000, outcome: "complete" };
+    merge(page, [one]);
+    assert.equal(merge(page, [{ ...one, sitMin: 30 }]).length, 1);
+  });
+});
+
+
+test("how a sit reads in the log", async (t) => {
+  const { describe } = loadPage().seam.internals;
+  const row = (over) => ({ at: "2026-01-06T09:05:00.000Z", settleSec: 40,
+                           sitMin: 20, satMin: 20, elapsedMs: 20 * 60000,
+                           outcome: "complete", ...over });
+
+  await t.test("a sit that ran its length shows one number", () => {
+    assert.match(describe(row()), /<b>20 min<\/b>/);
+  });
+
+  await t.test("a sit cut short shows both", () => {
+    // "12/20 min", because a log is read in a column and the shape of the number
+    // matters more than the grammar.
+    const text = describe(row({ satMin: 12, elapsedMs: 12 * 60000 }));
+    assert.match(text, /<b>12<\/b>\/20 min/);
+  });
+
+  await t.test("a cancelled sit does not read as a completed one", () => {
+    const done = describe(row());
+    const gave = describe(row({ outcome: "cancelled" }));
+    assert.notEqual(done, gave);
+  });
+
+  await t.test("and says so rather than showing a length", () => {
+    const gave = describe(row({ outcome: "cancelled", satMin: 12,
+                                elapsedMs: 12 * 60000 }));
+    assert.doesNotMatch(gave, /<b>12 min<\/b>/);
+  });
+
+  await t.test("the time is the local time, not UTC", () => {
+    if (!IN_PACIFIC) return;
+    assert.match(describe(row()), /01:05/);
   });
 });

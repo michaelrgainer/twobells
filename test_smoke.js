@@ -7,11 +7,11 @@
 // looked broken until you tried to use it.
 const test = require("node:test");
 const assert = require("node:assert");
-const { loadPage } = require("./stub_dom");
+const { loadPage, listens } = require("./stub_dom");
 
 test("the page wires itself up", async (t) => {
   const { nodes } = loadPage();
-  const wired = (id, event) => (nodes[id].listeners || []).includes(event);
+  const wired = (id, event) => listens(nodes[id], event);
 
   await t.test("the voices are built and named", () => {
     const voices = nodes["voices"];

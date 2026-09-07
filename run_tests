@@ -10,7 +10,7 @@
 set -uo pipefail
 cd "$(dirname "$0")"
 
-node --test test_smoke.js test_logic.js || exit 1
+node --test test_smoke.js test_logic.js test_session.js test_panel.js || exit 1
 [[ "${1:-}" == "--quick" ]] && exit 0
 
 exec node --test test_browser.js

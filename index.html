@@ -1586,19 +1586,26 @@
       Math.abs(distance - dial.radius) < Math.abs(distance - best.radius) ? dial : best);
   }
 
-  function setFromPoint(dial, point) {
+  function setFromPoint(dial, point, continuing) {
     // Clockwise from twelve, so the value grows the way the arc is drawn.
     let degrees = Math.atan2(point.y, point.x) * 180 / Math.PI + 90;
     if (degrees < 0) degrees += 360;
     const range = el[dial.range];
-    const previous = Number(range.value);
     let units = Math.round(degrees / 360 * RING_UNITS);
     // Twelve o'clock is both 0 and 60. Read literally, the top of the ring means
     // zero, so 60 minutes could never be chosen and a drag across the top would
-    // snap from 59 straight to 1. A move of more than half a turn is a crossing,
-    // not a jump, so it stops at the boundary it was heading for.
-    if (previous - units > RING_UNITS / 2) units = RING_UNITS;
-    else if (units - previous > RING_UNITS / 2) units = 0;
+    // snap from 59 straight to 1. Mid-drag, a move of more than half a turn is a
+    // crossing rather than a jump, so it stops at the boundary it was heading for.
+    //
+    // Only mid-drag. On the first touch there is no previous position to have moved
+    // from -- `previous` is just wherever the dial was sitting -- and reading a
+    // deliberate tap as a crossing put the dial at the wrong end of the ring: set to
+    // 45 minutes, tapping the 5-minute mark gave a sixty-minute sit.
+    if (continuing) {
+      const previous = Number(range.value);
+      if (previous - units > RING_UNITS / 2) units = RING_UNITS;
+      else if (units - previous > RING_UNITS / 2) units = 0;
+    }
     range.value = String(Math.max(Number(range.min), Math.min(Number(range.max), units)));
     renderDials();
   }
@@ -1630,7 +1637,7 @@
     if (!dragging) return;
     const point = ringPoint(event);
     if (sitDrag) adjustSit(point);
-    else setFromPoint(dragging, point);
+    else setFromPoint(dragging, point, true);
   }
 
   function endDrag() {
@@ -1670,7 +1677,7 @@
       // Nothing happens on contact; only on movement away from here.
       sitDrag = { angle: angleOf(point), endAt: session.endAt };
     } else {
-      setFromPoint(dial, point);
+      setFromPoint(dial, point, false);
     }
   });
 
@@ -2124,6 +2131,9 @@
   };
 
   loadDurations();
+  // Before loadLocal, which renders: the first render has to know how much of the
+  // log to show, or a chosen limit is written down and never read back.
+  loadShowing();
   buildVoices();
   buildTune();
   buildPickers();
