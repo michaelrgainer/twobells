@@ -897,7 +897,10 @@
   // of it is what anyone wants at the start of a sit.
   const MACROS = [
     { key: "pitch",   label: "Pitch",      min: 110, max: 660, step: 5,   unit: "Hz" },
-    { key: "ring",    label: "Ring",       min: 0.5, max: 14,  step: 0.25, unit: "s" },
+    // Stored as `ring` still -- the word on disk is on phones already, and a
+    // migration to match a label is a poor trade. "Duration" is the better word
+    // on screen because it is still true of the Silent body, where nothing rings.
+    { key: "ring",    label: "Duration",   min: 0.5, max: 14,  step: 0.25, unit: "s" },
     { key: "bright",  label: "Brightness", min: 0,   max: 100, step: 1,   unit: "" },
     { key: "shimmer", label: "Shimmer",    min: 0,   max: 100, step: 1,   unit: "" },
   ];
@@ -941,9 +944,10 @@
     // wide transient, and the ring and shimmer it pins on the way in. Ten seconds
     // of shimmering cowbell would be a different instrument, and not a funny one.
     // The absence of a body is still an answer to what it sounds like, so it
-    // belongs in the list rather than beside it as a switch. Ring stays live: how
+    // belongs in the list rather than beside it as a switch. Duration stays live:
+    // how
     // long the page takes to empty is a real choice even when nothing is heard.
-    { id: "silent",  label: "Silent",  synth: "silent",
+    { id: "silent",  label: "Silent",  synth: "silent", last: true,
       fixed: ["pitch", "bright", "shimmer"], damping: 1, partials: [] },
     // Not a bell with strange partials -- its own noise, with its own generator.
     // Everything else here is a fundamental plus overtones, which is why every
@@ -960,7 +964,12 @@
   let cowbell = false;
 
   function visibleTimbres() {
-    return TIMBRES.filter((body) => !body.hidden || cowbell);
+    const shown = TIMBRES.filter((body) => !body.hidden || cowbell);
+    // Silence is not one instrument among others, so it sits at the end whatever
+    // else has turned up. Stated here rather than left to where the literal
+    // happens to sit in the table above.
+    return shown.filter((body) => !body.last)
+                .concat(shown.filter((body) => body.last));
   }
 
   const CUSTOM_KEY = "two-bells:custom";

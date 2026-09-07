@@ -211,10 +211,15 @@ test("who gets offered vibration", async (t) => {
                      ["And vibrate"]);
   });
 
-  await t.test("Silent is a body", () => {
+  await t.test("Silent is a body, and the last one", () => {
     const { bodies } = panel({});
-    assert.ok(bodies.includes("Silent"), bodies.join(", "));
+    assert.equal(bodies[bodies.length - 1], "Silent", bodies.join(", "));
     assert.ok(!bodies.includes("Cowbell"), bodies.join(", "));
+  });
+
+  await t.test("and stays last once the cowbell turns up", () => {
+    const { bodies } = panel({ seed: { "two-bells:cowbell": "1" } });
+    assert.deepEqual(bodies.slice(-2), ["Cowbell", "Silent"], bodies.join(", "));
   });
 
   await t.test("a stored Silent flag becomes the Silent body", () => {

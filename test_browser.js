@@ -175,8 +175,8 @@ test("a tuned bell is not lost by trying another", SUITE, async (t) => {
     // By its label. Picking it by range or step matched Brightness instead and the
     // test went green against a slider nobody had asked about.
     const row = Array.from(document.querySelectorAll(".tune .tune-row"))
-                     .find((r) => r.querySelector(".dial-label").textContent === "Ring");
-    if (!row) throw new Error("no Ring slider in the tuning panel");
+                     .find((r) => r.querySelector(".dial-label").textContent === "Duration");
+    if (!row) throw new Error("no Duration slider in the tuning panel");
     const ring = row.querySelector(".slider");
     ring.value = "3";
     ring.dispatchEvent(new Event("input", { bubbles: true }));
@@ -239,7 +239,7 @@ test("Silent is a body, not a switch", SUITE, async (t) => {
     assert.ok(!seen.rows.includes("And vibrate"), seen.rows.join(" | "));
   });
 
-  await t.test("choosing it leaves Ring live and the rest dimmed", () => {
+  await t.test("choosing it leaves Duration live and the rest dimmed", () => {
     // How long the page takes to empty is a real choice even when nothing sounds.
     const seen = run(OPEN_PANEL + `
       document.querySelector('[data-timbre="silent"]').click();
@@ -251,7 +251,7 @@ test("Silent is a body, not a switch", SUITE, async (t) => {
       });
       return state;
     `);
-    assert.equal(seen.Ring, false);
+    assert.equal(seen.Duration, false);
     assert.equal(seen.Pitch, true);
     assert.equal(seen.Brightness, true);
     assert.equal(seen.Shimmer, true);
@@ -304,7 +304,7 @@ test("more cowbell", SUITE, async (t) => {
 
   await t.test("and it insists on being short and still", () => {
     // A cowbell that rings for ten seconds is a different instrument and not a
-    // funny one, so picking the body drags Ring and Shimmer with it.
+    // funny one, so picking the body drags Duration and Shimmer with it.
     const seen = run(`
       const wm = document.querySelector(".wordmark");
       for (let i = 0; i < 5; i++) { wm.click(); await wait(30); }
@@ -312,17 +312,17 @@ test("more cowbell", SUITE, async (t) => {
       const sliderFor = (label) => Array.from(document.querySelectorAll(".tune .tune-row"))
         .find((r) => r.querySelector(".dial-label").textContent === label)
         .querySelector(".slider").value;
-      const pinned = { ring: sliderFor("Ring"), shimmer: sliderFor("Shimmer"),
+      const pinned = { ring: sliderFor("Duration"), shimmer: sliderFor("Shimmer"),
                        bright: sliderFor("Brightness") };
 
       // Back to a body that pins nothing, then to the cowbell again by hand.
       document.querySelector('[data-timbre="church"]').click();
       await wait(120);
-      const loosened = { ring: sliderFor("Ring"), shimmer: sliderFor("Shimmer") };
+      const loosened = { ring: sliderFor("Duration"), shimmer: sliderFor("Shimmer") };
       document.querySelector('[data-timbre="church"]').parentElement
               .querySelector('[data-timbre="cowbell"]').click();
       await wait(120);
-      return { pinned, loosened, again: { ring: sliderFor("Ring"), shimmer: sliderFor("Shimmer"),
+      return { pinned, loosened, again: { ring: sliderFor("Duration"), shimmer: sliderFor("Shimmer"),
                                           bright: sliderFor("Brightness") },
                stored: JSON.parse(localStorage.getItem("two-bells:custom")) };
     `);
