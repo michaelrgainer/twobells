@@ -58,7 +58,7 @@ const PRELUDE = `
 const run = (body, options) => inPage(PRELUDE + body, options);
 
 test("a sit, start to finish", SUITE, async (t) => {
-  await t.test("runs through settle, sitting and back to idle", () => {
+  await t.test("runs through settle, sitting and into its rest", () => {
     const seen = run(`
       const phases = [];
       setDurations(30, 20);
@@ -72,7 +72,8 @@ test("a sit, start to finish", SUITE, async (t) => {
       phases.push($("sit").dataset.phase);
       return { phases, state: seam.getState() };
     `);
-    assert.deepEqual(seen.phases, ["waiting", "sitting", "idle"]);
+    // Not idle: a finished sit rests for half a minute before it resets.
+    assert.deepEqual(seen.phases, ["waiting", "sitting", "complete"]);
     assert.equal(seen.state.rows, 1);
     assert.equal(seen.state.totals.sits, 1);
   });
@@ -106,12 +107,16 @@ test("a sit, start to finish", SUITE, async (t) => {
 
 test("the page empties over the bell and fills back over the last one",
      SUITE, async (t) => {
-  await t.test("the legend goes as the first bell rings, and comes back after", () => {
+  await t.test("the legend goes as the first bell rings, and stays gone", () => {
     // Sampled as it moves rather than at a fixed threshold: the fade lasts as long
     // as the bell, which is eight seconds for the bowl and six for the chime, and a
     // test that picks a number has to be edited every time a voice is retuned.
+    //
+    // It does not come back at the closing bell any more -- the half minute after
+    // a sit belongs to the sit. What fills back in over that bell is the log.
     const seen = run(`
       const legend = () => opacityOf(".legend");
+      seam.internals.setNoteLinger(20000);
       setDurations(0, 20);
       $("start").click();
       seam.hurry({ bellIn: 0, endIn: 3000 });
@@ -120,18 +125,20 @@ test("the page empties over the bell and fills back over the last one",
       const leaving = [legend()];
       await wait(1800);
       leaving.push(legend());
-      await wait(1000);                       // the closing bell, and idle again
-      const returning = [legend()];
-      await wait(2000);
-      returning.push(legend());
-      return { fade, leaving, returning, phase: $("sit").dataset.phase };
+      await wait(1200);                       // the closing bell has rung
+      const logFilling = [opacityOf(".log")];
+      const legendAfter = legend();
+      await wait(2500);
+      logFilling.push(opacityOf(".log"));
+      return { fade, leaving, logFilling, legendAfter, phase: $("sit").dataset.phase };
     `);
     assert.equal(seen.fade, "8s");
     assert.ok(seen.leaving[1] < seen.leaving[0],
               `legend not fading: ${seen.leaving.join(" -> ")}`);
-    assert.equal(seen.phase, "idle");
-    assert.ok(seen.returning[1] > seen.returning[0],
-              `legend not returning: ${seen.returning.join(" -> ")}`);
+    assert.equal(seen.phase, "complete");
+    assert.ok(seen.legendAfter < 0.4, `legend at ${seen.legendAfter}`);
+    assert.ok(seen.logFilling[1] > seen.logFilling[0],
+              `log not filling: ${seen.logFilling.join(" -> ")}`);
   });
 
   await t.test("the settle ring vanishes rather than fading", () => {
@@ -147,6 +154,45 @@ test("the page empties over the bell and fills back over the last one",
     `);
     assert.equal(seen.before, 1);
     assert.equal(seen.after, 0);
+  });
+
+  await t.test("the half minute after is still the sit, and resets itself", () => {
+    // Everything is inert while the words say Sit complete, Begin included: there
+    // is nothing left to end and nobody starts another one this soon. The log is
+    // the exception -- a row was just added to it.
+    const seen = run(`
+      const op = (sel) => Number(getComputedStyle(document.querySelector(sel)).opacity);
+      seam.internals.setNoteLinger(12000);
+      setDurations(0, 20);
+      $("start").click();
+      seam.hurry({ bellIn: 0, endIn: 9000 });
+      await wait(9200);
+      await wait(9000);                       // past the closing bell's own fade
+      const resting = { phase: $("sit").dataset.phase, legend: op(".legend"),
+                        log: op(".log"), controls: op(".controls"), rings: op("#rings"),
+                        beginLive: getComputedStyle(document.querySelector(".controls"))
+                                     .pointerEvents !== "none" };
+      await wait(3800);
+      const after = { phase: $("sit").dataset.phase, legend: op(".legend"),
+                      note: $("note").innerHTML,
+                      beginLive: getComputedStyle(document.querySelector(".controls"))
+                                   .pointerEvents !== "none" };
+      return { resting, after };
+    `);
+    assert.equal(seen.resting.phase, "complete");
+    assert.equal(seen.resting.legend, 0);
+    assert.ok(seen.resting.log > 0.3 && seen.resting.log < 0.8,
+              `log at ${seen.resting.log}`);
+    assert.ok(seen.resting.controls > 0 && seen.resting.controls < 1,
+              `controls at ${seen.resting.controls}`);
+    assert.ok(seen.resting.rings < 0.5, `rings at ${seen.resting.rings}`);
+    assert.equal(seen.resting.beginLive, false);
+
+    // And it comes back without being asked.
+    assert.equal(seen.after.phase, "idle");
+    assert.equal(seen.after.note, "Settle<br>then begin");
+    assert.ok(seen.after.legend > 0.7, `legend at ${seen.after.legend}`);
+    assert.equal(seen.after.beginLive, true);
   });
 
   await t.test("'Sit complete' settles back to the resting words", () => {
@@ -199,7 +245,7 @@ test("a tuned bell is not lost by trying another", SUITE, async (t) => {
     // The fade is set from the voice's own decay, so the page says which bell it
     // thinks it is ringing without anyone having to listen to it.
     const seen = run(TUNE_RING_TO_THREE + `
-      const ringWas = JSON.parse(localStorage.getItem("two-bells:custom")).duration;
+      const ringWas = JSON.parse(localStorage.getItem("two-bells:custom")).durationSec;
       pick("bowl");
       await wait(80);
       pick("custom");
@@ -273,7 +319,7 @@ test("Silent is a body, not a switch", SUITE, async (t) => {
     `);
     assert.notEqual(seen.mid.fade, "600ms");
     assert.ok(seen.mid.legend < 1, `legend at ${seen.mid.legend}`);
-    assert.equal(seen.phase, "idle");
+    assert.equal(seen.phase, "complete");
     assert.equal(seen.rows, 1);
   });
 });
@@ -328,9 +374,9 @@ test("more cowbell", SUITE, async (t) => {
     `);
     assert.deepEqual(seen.pinned, { duration: "1.25", shimmer: "0", bright: "0" });
     assert.deepEqual(seen.again, { duration: "1.25", shimmer: "0", bright: "0" });
-    assert.equal(seen.stored.duration, 1.25);
-    assert.equal(seen.stored.shimmer, 0);
-    assert.equal(seen.stored.bright, 0);
+    assert.equal(seen.stored.durationSec, 1.25);
+    assert.equal(seen.stored.shimmerPct, 0);
+    assert.equal(seen.stored.brightPct, 0);
   });
 
   await t.test("and the fade follows it, so the page snaps back", () => {
@@ -372,7 +418,7 @@ test("the rings are the control", SUITE, async (t) => {
   await t.test("dragging the meditation handle changes the duration", () => {
     const seen = run(`
       setDurations(30, 20);
-      const before = seam.getState().sit;
+      const before = seam.getState().sitMin;
       const rings = $("rings").getBoundingClientRect();
       const cx = rings.left + rings.width / 2;
       const cy = rings.top + rings.height / 2;
@@ -385,7 +431,7 @@ test("the rings are the control", SUITE, async (t) => {
         clientX: cx + r, clientY: cy, bubbles: true, pointerId: 1, isPrimary: true }));
       window.dispatchEvent(new PointerEvent("pointerup", {
         clientX: cx + r, clientY: cy, bubbles: true, pointerId: 1, isPrimary: true }));
-      return { before, after: seam.getState().sit };
+      return { before, after: seam.getState().sitMin };
     `);
     assert.notEqual(seen.after, seen.before);
   });
@@ -414,7 +460,7 @@ test("the log and its tools", SUITE, async (t) => {
       const at = Date.now();
       seam.seed(Array.from({ length: 40 }, (_, i) => ({
         at: new Date(at - i * 3600000).toISOString(),
-        settle: 30, sit: 20, sat: 20, elapsedMs: 1230000, outcome: "complete" })));
+        settleSec: 30, sitMin: 20, satMin: 20, elapsedMs: 1230000, outcome: "complete" })));
       const all = { rows: rows(), stored: stored() };
       $("pick-show").click();
       await wait(120);
@@ -437,7 +483,7 @@ test("the log and its tools", SUITE, async (t) => {
       const at = Date.now();
       seam.seed(Array.from({ length: 8 }, (_, i) => ({
         at: new Date(at - i * 3600000).toISOString(),
-        settle: 30, sit: 20, sat: 20, elapsedMs: 1230000, outcome: "complete" })));
+        settleSec: 30, sitMin: 20, satMin: 20, elapsedMs: 1230000, outcome: "complete" })));
       $("pick-show").click();
       await wait(150);
       const picker = $("picker-show").getBoundingClientRect();
@@ -459,7 +505,7 @@ test("the log and its tools", SUITE, async (t) => {
       const at = Date.now();
       seam.seed(Array.from({ length: 8 }, (_, i) => ({
         at: new Date(at - i * 3600000).toISOString(),
-        settle: 30, sit: 20, sat: 20, elapsedMs: 1230000, outcome: "complete" })));
+        settleSec: 30, sitMin: 20, satMin: 20, elapsedMs: 1230000, outcome: "complete" })));
       $("copy").click();
       await wait(150);
       const lines = copied.split("\\n");

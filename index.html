@@ -394,7 +394,11 @@
   .arc-meditate { stroke: var(--ring); }
   .arc-settle { stroke: var(--ring-soft); }
 
-  #rings { touch-action: none; cursor: grab; }
+  #rings {
+    touch-action: none;
+    cursor: grab;
+    transition: opacity var(--bell-fade) ease;
+  }
   #rings:active { cursor: grabbing; }
 
   /* The tip you grab. Hidden once a sit is running -- the durations are settled by
@@ -467,7 +471,7 @@
 
   /* ── controls and log ──────────────────────────────────────────────────── */
 
-  .controls { display: flex; gap: 14px; }
+  .controls { display: flex; gap: 14px; transition: opacity var(--bell-fade) ease; }
 
   .btn {
     font-family: var(--ui);
@@ -564,8 +568,6 @@
   a.tool { text-decoration: none; }
   .tool:hover { color: var(--text); }
 
-  .sit:not([data-phase="idle"]) .log-tools { opacity: 0; pointer-events: none; }
-
   .log em { font-style: italic; color: var(--rose); }
   .log b { font-weight: 400; color: var(--text); }
 
@@ -574,18 +576,38 @@
      a control still reads as something you might be able to use. */
   /* Inert from the moment Begin is pressed, but still visible: the page empties on
      the first bell, not before it. The wordmark and End Now stay throughout -- one
-     is not a control, and the other is the only one left that does anything. */
-  .sit:not([data-phase="idle"]) .legend,
-  .sit:not([data-phase="idle"]) .tune,
-  .sit:not([data-phase="idle"]) .voices,
-  .sit:not([data-phase="idle"]) .log,
-  .sit:not([data-phase="idle"]) .log-tools { pointer-events: none; }
+     is not a control, and the other is the only one left that does anything.
 
-  .sit[data-phase="sitting"] .legend,
-  .sit[data-phase="sitting"] .tune,
-  .sit[data-phase="sitting"] .voices,
-  .sit[data-phase="sitting"] .log,
-  .sit[data-phase="sitting"] .log-tools { opacity: 0; }
+     What the bell is going to sound like is settled once a sit has started, and
+     stays settled through the rest afterwards. */
+  .sit:not([data-phase="idle"]) :is(.legend, .tune, .voices) { pointer-events: none; }
+
+  /* The log is different. It is unavailable while a sit runs, and available again
+     the moment one ends -- somebody who has just finished a sit is exactly who
+     wants to prune it, copy it, or look at what they have done. */
+  .sit:is([data-phase="waiting"], [data-phase="sitting"])
+    :is(.log, .log-tools) { pointer-events: none; }
+
+  .sit:is([data-phase="sitting"], [data-phase="complete"])
+    :is(.legend, .tune, .voices, .log-tools) { opacity: 0; }
+
+  .sit[data-phase="sitting"] .log { opacity: 0; }
+
+  /* The thirty seconds after the closing bell still belong to the sit, so nothing
+     is available yet. The log and Begin are shown at half strength anyway: bright
+     enough to say they are there, dim enough to say not yet. Both come up on
+     their own, and everything else stays away until they do. */
+  .sit[data-phase="complete"] :is(.log, .log-tools) { opacity: 0.5; }
+  .sit[data-phase="complete"] .controls { opacity: 0.5; pointer-events: none; }
+
+  /* And the rings with them. Everything else was already inert for any phase
+     but idle; the rings were not, because during a sit they are the one thing
+     still worth dragging. Once it is over they are not that either. */
+  .sit[data-phase="complete"] #rings { pointer-events: none; }
+
+  /* The rings are dimmed rather than gone: the shape is worth keeping under the
+     words, but a bright ring reads as one that still means something. */
+  .sit[data-phase="complete"] #rings { opacity: 0.22; }
 
   :focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
 
@@ -768,7 +790,7 @@
   // the loudest thing in a cowbell is not its fundamental but a mode at 2.73x it;
   // the low modes die FIRST, which is backwards from every bell above; and 47% of
   // the energy is spent in the first twelve milliseconds, so it is mostly stick.
-  const COWBELL_ROOT = 718;
+  const COWBELL_ROOT_HZ = 718;
   const COWBELL_MODES = [
     // ratio, level, seconds to -20 dB
     [1.000, 1.000, 0.35],
@@ -804,13 +826,13 @@
   // Strike, strike, half a beat of nothing, strike, strike. The second pair is
   // duller, and the two of them differ from each other: nobody hits the same spot
   // twice, and a cowbell struck an inch further along is a slightly different bell.
-  const TAP = 0.20;
+  const TAP_SEC = 0.20;
   const COWBELL_FIGURE = [
     // offset, level, brightness, where it was hit
-    [0.00,        1.00, 1.00, 1.000],
-    [TAP,         0.92, 0.96, 0.997],
-    [TAP * 2.5,   0.78, 0.74, 1.012],
-    [TAP * 3.5,   0.68, 0.62, 0.988],
+    [0.00,            1.00, 1.00, 1.000],
+    [TAP_SEC,         0.92, 0.96, 0.997],
+    [TAP_SEC * 2.5,   0.78, 0.74, 1.012],
+    [TAP_SEC * 3.5,   0.68, 0.62, 0.988],
   ];
 
   function strikeCowbell() {
@@ -833,7 +855,7 @@
       const osc = audio.createOscillator();
       const gain = audio.createGain();
       osc.type = "sine";
-      osc.frequency.value = COWBELL_ROOT * ratio * tilt;
+      osc.frequency.value = COWBELL_ROOT_HZ * ratio * tilt;
       gain.gain.setValueAtTime(0, now);
       const shaped = ratio > 3 ? level * bright : level;
       gain.gain.linearRampToValueAtTime(shaped * 0.22, now + 0.002);
@@ -884,10 +906,10 @@
   // what a struck STRING produces. That is why they read as piano. What is left is
   // inharmonic, which is what struck metal does, and Custom stays in that territory.
   const PRESETS = [
-    { id: "bowl",  label: "Bowl",  root: 210, decay: 8.0,
+    { id: "bowl",  label: "Bowl",  rootHz: 210, decaySec: 8.0,
       damping: 0.95, detune: 0.0035, strike: 0.20, bright: 1,
       partials: [[1, 0.50], [2.68, 0.20], [5.15, 0.09], [8.40, 0.04]] },
-    { id: "chime", label: "Chime", root: 440, decay: 6.0,
+    { id: "chime", label: "Chime", rootHz: 440, decaySec: 6.0,
       damping: 1.05, detune: 0.0012, strike: 0.26, bright: 1,
       partials: [[1, 0.38], [2.76, 0.16], [5.40, 0.07], [8.93, 0.03]] },
   ];
@@ -896,13 +918,13 @@
   // partial ratios would be a synth toy: most of that space is atonal, and none
   // of it is what anyone wants at the start of a sit.
   const MACROS = [
-    { key: "pitch",   label: "Pitch",      min: 110, max: 660, step: 5,   unit: "Hz" },
+    { key: "pitchHz",    label: "Pitch",      min: 110, max: 660, step: 5,    unit: "Hz" },
     // "Duration" rather than "Ring" because it is still true of the Silent body,
     // where nothing rings and the number still decides how long the page takes
     // to empty.
-    { key: "duration", label: "Duration",  min: 0.5, max: 14,  step: 0.25, unit: "s" },
-    { key: "bright",  label: "Brightness", min: 0,   max: 100, step: 1,   unit: "" },
-    { key: "shimmer", label: "Shimmer",    min: 0,   max: 100, step: 1,   unit: "" },
+    { key: "durationSec", label: "Duration",  min: 0.5, max: 14,  step: 0.25, unit: "s" },
+    { key: "brightPct",  label: "Brightness", min: 0,   max: 100, step: 1,    unit: "" },
+    { key: "shimmerPct", label: "Shimmer",    min: 0,   max: 100, step: 1,    unit: "" },
   ];
 
   // Bodies, not a blend of two of them. Interpolating partial ratios walks a
@@ -948,7 +970,7 @@
     // how
     // long the page takes to empty is a real choice even when nothing is heard.
     { id: "silent",  label: "Silent",  synth: "silent", last: true,
-      fixed: ["pitch", "bright", "shimmer"], damping: 1, partials: [] },
+      fixed: ["pitchHz", "brightPct", "shimmerPct"], damping: 1, partials: [] },
     // Not a bell with strange partials -- its own noise, with its own generator.
     // Everything else here is a fundamental plus overtones, which is why every
     // attempt to reach a cowbell that way sounded like a short bell: nobody hears
@@ -956,7 +978,7 @@
     // narrow band, gone in a third of a second. Nothing to tune, hence `fixed`.
     { id: "cowbell", label: "Cowbell", hidden: true, fixed: true, synth: "cowbell",
       damping: 2.60, hit: 2.6, hitBand: 4.5,
-      duration: 1.25, bright: 0, shimmer: 0,
+      durationSec: 1.25, brightPct: 0, shimmerPct: 0,
       partials: [[1, 0.30], [3.10, 0.22]] },
   ];
 
@@ -973,8 +995,8 @@
   }
 
   const CUSTOM_KEY = "two-bells:custom";
-  let custom = { pitch: 330, duration: 10, bright: 60, shimmer: 20, timbre: "church",
-                 vibrate: false };
+  let custom = { pitchHz: 330, durationSec: 10, brightPct: 60, shimmerPct: 20,
+                 timbre: "church", vibrate: false };
 
   // Desktop Chrome ships navigator.vibrate as a no-op, so the function existing
   // proves only that someone implemented the spec, not that anything will move.
@@ -991,19 +1013,19 @@
   }
 
   function customVoice() {
-    const b = custom.bright / 100;
+    const b = custom.brightPct / 100;
     const body = currentBody();
     return {
       id: "custom", label: "Custom",
-      root: custom.pitch,
-      decay: custom.duration,
+      rootHz: custom.pitchHz,
+      decaySec: custom.durationSec,
       synth: body.synth,
       vibrate: CAN_VIBRATE && custom.vibrate,
       // The body sets the relative decay rates; Brightness leans on them.
       damping: body.damping - b * 0.35,
       // A quarter less spread than it was: at the top of the range the beating
       // was doing more than shimmering.
-      detune: (custom.shimmer / 100) * 0.0045,
+      detune: (custom.shimmerPct / 100) * 0.0045,
       strike: (0.14 + b * 0.30) * (body.hit || 1),
       hitBand: body.hitBand || 7,
       bright: 0.55 + b * 0.9,
@@ -1047,8 +1069,8 @@
     if (!audio) return;
     if (voice.synth === "cowbell") return strikeCowbell();
     const now = audio.currentTime;
-    const root = voice.root;
-    const length = voice.decay;
+    const root = voice.rootHz;
+    const length = voice.decaySec;
 
     // A brightness envelope over the whole strike. The top end belongs to the
     // moment of impact, not to the ring that follows it.
@@ -1392,12 +1414,18 @@
     noteTimer = setTimeout(() => {
       const fade = parseFloat(getComputedStyle(el.sit).getPropertyValue("--note-fade"));
       el.note.style.opacity = "0";
-      noteTimer = setTimeout(() => setNote(SETTLE_NOTE), fade || 0);
+      noteTimer = setTimeout(() => {
+        // The words and the page come back together, and at the same speed: the
+        // default fade, not the bell's, since the bell finished half a minute ago.
+        el.sit.style.removeProperty("--bell-fade");
+        el.sit.dataset.phase = "idle";
+        setNote(SETTLE_NOTE);
+      }, fade || 0);
     }, noteLingerMs);
   }
 
   function settings() {
-    return { settle: Number(el.rngFirst.value), sit: Number(el.rngSit.value) };
+    return { settleSec: Number(el.rngFirst.value), sitMin: Number(el.rngSit.value) };
   }
 
   // Coarse by 5s in the list, exact on the ring.
@@ -1505,16 +1533,16 @@
 
   function renderDials() {
     bumpSettle();
-    const { settle, sit } = settings();
+    const { settleSec, sitMin } = settings();
     PICKERS.slice(0, 2).forEach((picker) => {
       el[picker.button].textContent = picker.label(picker.get());
     });
     // The button names what pressing it actually starts. With settling time on the
     // clock the first thing that happens is settling, not the sit.
-    el.start.textContent = settle > 0 ? "Settle" : "Begin";
+    el.start.textContent = settleSec > 0 ? "Settle" : "Begin";
     if (!session) {
-      paintDial(DIALS[0], sit);
-      paintDial(DIALS[1], settle);
+      paintDial(DIALS[0], sitMin);
+      paintDial(DIALS[1], settleSec);
     }
   }
 
@@ -1545,7 +1573,7 @@
     if (!saved) return;
     // Clamped against the inputs' own bounds rather than trusted: a stored value
     // from an older range would otherwise put a handle off the ring.
-    [["settle", "rngFirst"], ["sit", "rngSit"]].forEach(([key, id]) => {
+    [["settleSec", "rngFirst"], ["sitMin", "rngSit"]].forEach(([key, id]) => {
       const range = el[id];
       const value = Number(saved[key]);
       if (!Number.isFinite(value)) return;
@@ -1639,6 +1667,9 @@
     // Suppressed first, and whether or not a ring was hit: a press that lands in
     // the hole would otherwise begin a native text-selection drag.
     event.preventDefault();
+    // The rest after a sit answers to nothing. CSS says so too, but a synthesised
+    // event skips hit-testing and would otherwise still land here.
+    if (el.sit.dataset.phase === "complete") return;
     // Mid-sit, only the outer ring answers, and only to shorten.
     if (session && !session.rang) return;
     const point = ringPoint(event);
@@ -1667,20 +1698,20 @@
     unlockAudio();
     holdScreen();
 
-    const { settle, sit } = settings();
+    const { settleSec, sitMin } = settings();
     const now = Date.now();
     session = {
-      settle, sit,
+      settleSec, sitMin,
       startedAt: now,
-      bellAt: now + settle * 1000,
-      endAt: now + settle * 1000 + sit * 60000,
+      bellAt: now + settleSec * 1000,
+      endAt: now + settleSec * 1000 + sitMin * 60000,
       rang: false,
     };
 
-    el.sit.dataset.phase = settle > 0 ? "waiting" : "sitting";
-    setNote(settle > 0 ? "Settling" : "");
+    el.sit.dataset.phase = settleSec > 0 ? "waiting" : "sitting";
+    setNote(settleSec > 0 ? "Settling" : "");
     el.start.hidden = true;
-    el.cancel.textContent = settle > 0 ? "Oops, never mind" : "End Now";
+    el.cancel.textContent = settleSec > 0 ? "Oops, never mind" : "End Now";
     el.cancel.hidden = false;
     closePanel();
 
@@ -1707,8 +1738,8 @@
       session.rang = true;
       strike();
       // The page empties over the bell: the fundamental rings for exactly
-      // voice.decay seconds, so that is how long the fade takes.
-      setBellFade(voice.decay + "s");
+      // voice.decaySec seconds, so that is how long the fade takes.
+      setBellFade(voice.decaySec + "s");
       el.sit.dataset.phase = "sitting";
       el.cancel.textContent = "End Now";
       setNote("");
@@ -1724,7 +1755,7 @@
       paintDial(DIALS[1], 0);
       paintDial(DIALS[0], (session.endAt - now) / 60000);   // minutes left, of sixty
     } else {
-      paintDial(DIALS[0], session.sit);                     // still to come
+      paintDial(DIALS[0], session.sitMin);                 // still to come
       paintDial(DIALS[1], (session.bellAt - now) / 1000);   // seconds left, of sixty
     }
   }
@@ -1739,14 +1770,14 @@
     const elapsedMs = Date.now() - session.startedAt;
     // Both numbers, because a sit dragged short is neither the sit that was set
     // nor an abandoned one, and the log should not have to pretend it is either.
-    const sat = session.rang
+    const satMin = session.rang
       ? Math.max(0, Math.round((Date.now() - session.bellAt) / 60000))
       : 0;
     const record = {
       at: new Date().toISOString(),
-      settle: session.settle,
-      sit: session.sit,
-      sat,
+      settleSec: session.settleSec,
+      sitMin: session.sitMin,
+      satMin,
       elapsedMs,
       outcome,
     };
@@ -1760,14 +1791,19 @@
     while (backstops.length) clearTimeout(backstops.pop());
     releaseScreen();
 
-    // The page returns over the closing bell, as slowly as it left over the
-    // first one. An early exit rings nothing, so there is nothing to return
-    // across: back to the stylesheet's own default.
-    if (outcome === "complete") setBellFade(voice.decay + "s");
-    else el.sit.style.removeProperty("--bell-fade");
-    el.sit.dataset.phase = "idle";
-    setNote(outcome === "complete" ? "Sit complete" : SETTLE_NOTE);
-    if (outcome === "complete") settleNoteAfterLinger();
+    // A completed sit rests before it resets: the page stays as empty as it was,
+    // over the length of the closing bell, and settleNoteAfterLinger puts it back.
+    // An early exit rings nothing and has nothing to sit with, so it returns now.
+    if (outcome === "complete") {
+      setBellFade(voice.decaySec + "s");
+      el.sit.dataset.phase = "complete";
+      setNote("Sit complete");
+      settleNoteAfterLinger();
+    } else {
+      el.sit.style.removeProperty("--bell-fade");
+      el.sit.dataset.phase = "idle";
+      setNote(SETTLE_NOTE);
+    }
     el.start.hidden = false;
     el.cancel.hidden = true;
     renderDials();
@@ -1830,7 +1866,7 @@
 
   function minutesSat(record) {
     if (record.outcome === "complete")
-      return record.sat === undefined ? record.sit : record.sat;
+      return record.satMin === undefined ? record.sitMin : record.satMin;
     return Math.max(0, Math.round(record.elapsedMs / 60000));
   }
 
@@ -1845,18 +1881,18 @@
     // of text it fills the width and wraps on a phone, and a wrapped log row reads
     // as two entries.
     const left = "<span class=\"sit-when\">" + day + " " + time + "</span>";
-    const sat = minutesSat(record);
+    const satMin = minutesSat(record);
     if (record.outcome === "complete") {
       // "12/20 min" rather than "12 min of 20": the long form was the one row that
       // would not fit a phone, and a log is read in a column where the shape of the
       // number matters more than the grammar.
-      const len = sat === record.sit
-        ? "<b>" + sat + " min</b>"
-        : "<b>" + sat + "</b>/" + record.sit + " min";
+      const len = satMin === record.sitMin
+        ? "<b>" + satMin + " min</b>"
+        : "<b>" + satMin + "</b>/" + record.sitMin + " min";
       return left + "<span class=\"sit-len\">" + len + "</span>";
     }
-    return left + "<span class=\"sit-len\"><em>" + sat + "/" +
-           record.sit + " min</em></span>";
+    return left + "<span class=\"sit-len\"><em>" + satMin + "/" +
+           record.sitMin + " min</em></span>";
   }
 
   // Six or more before the housekeeping appears: below that, scrolling past the
@@ -1958,7 +1994,7 @@
       const iso = when.getFullYear() + "-" + pad(when.getMonth() + 1) + "-" +
                   pad(when.getDate());
       const clock = pad(when.getHours()) + ":" + pad(when.getMinutes());
-      return [iso, clock, record.settle, record.sit, minutesSat(record),
+      return [iso, clock, record.settleSec, record.sitMin, minutesSat(record),
               record.outcome].join("\t");
     });
     // After a blank line so a spreadsheet keeps them out of the table. Every row
@@ -2068,8 +2104,8 @@
       phase: el.sit.dataset.phase,
       note: el.note.innerHTML,
       voice: voice.id,
-      settle: Number(el.rngFirst.value),
-      sit: Number(el.rngSit.value),
+      settleSec: Number(el.rngFirst.value),
+      sitMin: Number(el.rngSit.value),
       rows: history.length,
       shown: shownRows().length,
       showing,

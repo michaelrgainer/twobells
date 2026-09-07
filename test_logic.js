@@ -20,7 +20,7 @@ const IN_PACIFIC = new Date(2026, 8, 6, 21, 5).getTimezoneOffset() === 420;
 function sit(overrides = {}) {
   return {
     at: new Date(2026, 8, 6, 9, 0).toISOString(),
-    settle: 30, sit: 20, sat: 20, elapsedMs: 1230000, outcome: "complete",
+    settleSec: 30, sitMin: 20, satMin: 20, elapsedMs: 1230000, outcome: "complete",
     ...overrides,
   };
 }
@@ -36,12 +36,12 @@ test("minutesSat", async (t) => {
   const { minutesSat } = seam.internals;
 
   await t.test("a completed sit is as long as it was sat", () => {
-    assert.equal(minutesSat(sit({ sit: 20, sat: 12 })), 12);
+    assert.equal(minutesSat(sit({ sitMin: 20, satMin: 12 })), 12);
   });
 
   await t.test("a record from before sat existed falls back to what was set", () => {
-    const legacy = sit({ sit: 20 });
-    delete legacy.sat;
+    const legacy = sit({ sitMin: 20 });
+    delete legacy.satMin;
     assert.equal(minutesSat(legacy), 20);
   });
 
@@ -80,7 +80,7 @@ test("the export", async (t) => {
 
   await t.test("counts a shortened sit as what was sat, not what was set", () => {
     const { seam } = loadPage();
-    seam.internals.setHistory([sit({ sit: 20, sat: 12 })]);
+    seam.internals.setHistory([sit({ sitMin: 20, satMin: 12 })]);
     const row = seam.internals.toTSV().split("\n")[1].split("\t");
     assert.equal(row[3], "20");   // set_min
     assert.equal(row[4], "12");   // sat_min
