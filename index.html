@@ -191,6 +191,11 @@
 
   .tune-row .slider { grid-column: 1 / -1; }
 
+  /* Dimmed rather than hidden: what a body cannot be told is worth seeing. */
+  .slider:disabled { opacity: 0.28; cursor: default; }
+  .tune-row:has(.slider:disabled) .dial-label,
+  .tune-row:has(.slider:disabled) .tune-value { opacity: 0.45; }
+
   .tune-value {
     font-size: 18px;
     font-variant-numeric: tabular-nums;
@@ -753,6 +758,110 @@
     el[dial.halo].setAttribute("cy", y);
   }
 
+  // Measured, not guessed. A public-domain recording (Wikimedia Commons,
+  // Cowbell.ogg, PD-user Freddythehat) has fourteen strikes in it; the longest was
+  // analysed for its mode frequencies, their relative levels, and how long each
+  // one takes to fall 20 dB. None of the recording is here -- only the numbers it
+  // gave up, which is why this is still a page and not a payload.
+  //
+  // Three things the numbers said that no amount of fiddling was going to find:
+  // the loudest thing in a cowbell is not its fundamental but a mode at 2.73x it;
+  // the low modes die FIRST, which is backwards from every bell above; and 47% of
+  // the energy is spent in the first twelve milliseconds, so it is mostly stick.
+  const COWBELL_ROOT = 718;
+  const COWBELL_MODES = [
+    // ratio, level, seconds to -20 dB
+    [1.000, 1.000, 0.35],
+    [2.456, 0.230, 0.28],
+    [2.997, 0.071, 0.28],
+    [4.178, 0.062, 0.15],
+    [5.406, 0.044, 0.05],
+    // A close pair up top, a fifth of a semitone apart. Two modes that nearly
+    // agree is most of what stops a struck plate sounding like an oscillator.
+    [6.480, 0.057, 0.08],
+    [6.611, 0.092, 0.15],
+  ];
+
+  // Zero is the recording; above it, each mode is weighted by its own ratio, so
+  // the top comes up and the body goes down. It sits at zero because this bell is
+  // already bright where it counts -- not in its modes, which are led by the
+  // fundamental, but in the stick, whose energy is centred above 5 kHz.
+  const COWBELL_TIN = 0;
+
+  // And a second knob for how long it hangs about. One is the recording; below
+  // it, every mode is cut in the same proportion, so the balance between them
+  // stays where the measurement put it.
+  const COWBELL_HANG = 0.60;
+  const COWBELL_LEVELS = (() => {
+    const weighted = COWBELL_MODES.map(([ratio, level]) => level * Math.pow(ratio, COWBELL_TIN));
+    const loudest = Math.max(...weighted);
+    return weighted.map((v) => v / loudest);
+  })();
+
+  // Two, a pause, then two more with some of the metal taken off them. A cowbell
+  // that strikes once is a doorbell; the figure is what makes it a cowbell, and a
+  // figure is a rhythm rather than anybody's recording.
+  // Strike, strike, half a beat of nothing, strike, strike. The second pair is
+  // duller, and the two of them differ from each other: nobody hits the same spot
+  // twice, and a cowbell struck an inch further along is a slightly different bell.
+  const TAP = 0.20;
+  const COWBELL_FIGURE = [
+    // offset, level, brightness, where it was hit
+    [0.00,        1.00, 1.00, 1.000],
+    [TAP,         0.92, 0.96, 0.997],
+    [TAP * 2.5,   0.78, 0.74, 1.012],
+    [TAP * 3.5,   0.68, 0.62, 0.988],
+  ];
+
+  function strikeCowbell() {
+    const now = audio.currentTime;
+    COWBELL_FIGURE.forEach(([offset, level, bright, tilt]) =>
+      tapCowbell(now + offset, level, bright, tilt));
+  }
+
+  function tapCowbell(at, level, bright, tilt) {
+    const now = at;
+    const bus = audio.createGain();
+    bus.gain.value = 0.5 * level;
+    bus.connect(audio.destination);
+
+    COWBELL_MODES.forEach(([ratio, measured, life], index) => {
+      const level = COWBELL_LEVELS[index];
+      // The ramp runs to silence; -20 dB happens about a third of the way along,
+      // which is where the measurement put it.
+      const end = life * 3.5 * COWBELL_HANG;
+      const osc = audio.createOscillator();
+      const gain = audio.createGain();
+      osc.type = "sine";
+      osc.frequency.value = COWBELL_ROOT * ratio * tilt;
+      gain.gain.setValueAtTime(0, now);
+      const shaped = ratio > 3 ? level * bright : level;
+      gain.gain.linearRampToValueAtTime(shaped * 0.22, now + 0.002);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + end);
+      osc.connect(gain).connect(bus);
+      osc.start(now);
+      osc.stop(now + end + 0.02);
+    });
+
+    // Most of the sound, not half of it: 72% of the energy is spent in the first
+    // ten milliseconds, centred above 5 kHz. A cowbell is a stick hitting metal
+    // and the metal is the smaller half of that.
+    if (!noiseBuffer) noiseBuffer = makeNoise();
+    const hit = audio.createBufferSource();
+    const band = audio.createBiquadFilter();
+    const hitGain = audio.createGain();
+    hit.buffer = noiseBuffer;
+    band.type = "bandpass";
+    // The stick brightens with the bell, by the same knob.
+    band.frequency.value = 5400 * (1 + 0.30 * COWBELL_TIN) * (0.72 + 0.28 * bright);
+    band.Q.value = 0.7;
+    hitGain.gain.setValueAtTime(0.75, now);
+    hitGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.022);
+    hit.connect(band).connect(hitGain).connect(bus);
+    hit.start(now);
+    hit.stop(now + 0.1);
+  }
+
   // ── the bell ────────────────────────────────────────────────────────────
   // Synthesised rather than fetched: an audio file would be a network request
   // the page's own CSP forbids, and a struck bowl is a handful of inharmonic
@@ -831,9 +940,15 @@
     // you is the stick rather than the metal -- hence the steep damping, the loud
     // wide transient, and the ring and shimmer it pins on the way in. Ten seconds
     // of shimmering cowbell would be a different instrument, and not a funny one.
-    { id: "cowbell", label: "Cowbell",   damping: 2.60, hit: 2.6, hitBand: 4.5,
-      hidden: true, ring: 0.5, bright: 0, shimmer: 0,
-      partials: [[1, 0.30], [3.10, 0.22], [5.42, 0.13], [7.24, 0.07]] },
+    // Not a bell with strange partials -- its own noise, with its own generator.
+    // Everything else here is a fundamental plus overtones, which is why every
+    // attempt to reach a cowbell that way sounded like a short bell: nobody hears
+    // a cowbell as a pitch. Two square waves a rough fourth apart, through a
+    // narrow band, gone in a third of a second. Nothing to tune, hence `fixed`.
+    { id: "cowbell", label: "Cowbell", hidden: true, fixed: true, synth: "cowbell",
+      damping: 2.60, hit: 2.6, hitBand: 4.5,
+      ring: 1.25, bright: 0, shimmer: 0,
+      partials: [[1, 0.30], [3.10, 0.22]] },
   ];
 
   const COWBELL_KEY = "two-bells:cowbell";
@@ -857,14 +972,19 @@
                       typeof matchMedia === "function" &&
                       matchMedia("(pointer: coarse)").matches;
 
+  function currentBody() {
+    return TIMBRES.find((body) => body.id === custom.timbre) || TIMBRES[0];
+  }
+
   function customVoice() {
     const b = custom.bright / 100;
-    const body = TIMBRES.find((t) => t.id === custom.timbre) || TIMBRES[0];
+    const body = currentBody();
     return {
       id: "custom", label: "Custom",
       first: custom.pitch,
       decay: custom.ring,
       silent: custom.silent,
+      synth: body.synth,
       vibrate: CAN_VIBRATE && custom.vibrate,
       // The body sets the relative decay rates; Brightness leans on them.
       damping: body.damping - b * 0.35,
@@ -909,6 +1029,7 @@
     // page still empties over the fade, and a phone still says so in the hand.
     if (voice.silent) return;
     if (!audio) return;
+    if (voice.synth === "cowbell") return strikeCowbell();
     const now = audio.currentTime;
     const root = voice.first;
     const length = voice.decay;
@@ -1025,7 +1146,7 @@
     try {
       cowbell = localStorage.getItem(COWBELL_KEY) === "1";
     } catch (_) {}
-    if (cowbell) el.wordmark.title = "More cowbell.";
+    if (cowbell) el.wordmark.title = "Now with more cowbell.";
 
     let start = PRESETS[0].id;
     try {
@@ -1062,10 +1183,10 @@
         });
         // Redrawn only when the body actually moved a slider, so the panel does
         // not flicker for the six bodies that pin nothing.
-        const moved = adoptBody(body);
+        adoptBody(body);
         voice = customVoice();
         try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom)); } catch (_) {}
-        if (moved) rebuildTune();
+        rebuildTune();
         keepPanelOpen();
         unlockAudio();
         strike();
@@ -1076,6 +1197,9 @@
     bodyRow.append(bodyLabel, picker);
     bodyRow.querySelector(".timbres").style.gridColumn = "1 / -1";
     el.tune.appendChild(bodyRow);
+
+    // A body that is one specific noise has nothing for these to say.
+    const locked = !!currentBody().fixed;
 
     MACROS.forEach((macro) => {
       const row = document.createElement("div");
@@ -1096,6 +1220,7 @@
       range.step = String(macro.step);
       range.value = String(custom[macro.key]);
       range.setAttribute("aria-label", macro.label);
+      range.disabled = locked;
 
       const show = () => {
         value.textContent = custom[macro.key] + (macro.unit ? " " + macro.unit : "");
@@ -1195,7 +1320,7 @@
       adoptBody(TIMBRES.find((body) => body.id === "cowbell"));
       try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom)); } catch (_) {}
       rebuildTune();
-      el.wordmark.title = "More cowbell.";
+      el.wordmark.title = "Now with more cowbell.";
       // Straight to it, and struck: an easter egg you have to go and find twice
       // is one nobody finds once.
       chooseVoice("custom");

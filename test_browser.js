@@ -328,9 +328,9 @@ test("more cowbell", SUITE, async (t) => {
                                           bright: sliderFor("Brightness") },
                stored: JSON.parse(localStorage.getItem("two-bells:custom")) };
     `);
-    assert.deepEqual(seen.pinned, { ring: "0.5", shimmer: "0", bright: "0" });
-    assert.deepEqual(seen.again, { ring: "0.5", shimmer: "0", bright: "0" });
-    assert.equal(seen.stored.ring, 0.5);
+    assert.deepEqual(seen.pinned, { ring: "1.25", shimmer: "0", bright: "0" });
+    assert.deepEqual(seen.again, { ring: "1.25", shimmer: "0", bright: "0" });
+    assert.equal(seen.stored.ring, 1.25);
     assert.equal(seen.stored.shimmer, 0);
     assert.equal(seen.stored.bright, 0);
   });
@@ -346,7 +346,7 @@ test("more cowbell", SUITE, async (t) => {
       await wait(150);
       return getComputedStyle($("sit")).getPropertyValue("--bell-fade").trim();
     `);
-    assert.equal(seen, "0.5s");
+    assert.equal(seen, "1.25s");
   });
 
   await t.test("but five taps finds it, and it stays found", () => {
@@ -366,7 +366,7 @@ test("more cowbell", SUITE, async (t) => {
     assert.equal(seen.timbre, "cowbell");
     assert.equal(seen.voice, "custom");
     assert.equal(seen.unlocked, "1");
-    assert.equal(seen.title, "More cowbell.");
+    assert.equal(seen.title, "Now with more cowbell.");
   });
 });
 
