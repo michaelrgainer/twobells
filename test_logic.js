@@ -170,9 +170,20 @@ test("the running totals", async (t) => {
   });
 });
 
+// The tuning panel, as a list of row labels and a list of body buttons.
+function panel(opts) {
+  const tune = loadPage(opts).nodes["tune"];
+  const bodyRow = tune.children.find((row) =>
+    row.children.some((child) => child.className === "timbres"));
+  const picker = bodyRow.children.find((child) => child.className === "timbres");
+  return {
+    rows: tune.children.map((row) => (row.children[0] || {}).textContent),
+    bodies: picker.children.map((button) => button.textContent),
+  };
+}
+
 test("who gets offered vibration", async (t) => {
-  const rows = (opts) => loadPage(opts).nodes["tune"].children
-    .map((row) => (row.children[0] || {}).textContent);
+  const rows = (opts) => panel(opts).rows;
 
   await t.test("a phone does", () => {
     assert.ok(rows({ touch: true }).includes("And vibrate"));
@@ -191,9 +202,29 @@ test("who gets offered vibration", async (t) => {
               onPhone.join(" | "));
   });
 
-  await t.test("but Silent is offered to everyone", () => {
-    assert.ok(rows({ touch: true }).includes("Silent"));
-    assert.ok(rows({}).includes("Silent"));
+  await t.test("and vibration is the only switch there is", () => {
+    // Silence is not an addition to a bell, it is an answer to which bell -- so it
+    // lives among the bodies. There is no silent church bell as distinct from a
+    // silent cowbell, which is exactly why it is one entry and not a multiplier.
+    assert.ok(!rows({ touch: true }).includes("Silent"));
+    assert.deepEqual(rows({ touch: true }).filter((r) => r === "And vibrate"),
+                     ["And vibrate"]);
+  });
+
+  await t.test("Silent is a body", () => {
+    const { bodies } = panel({});
+    assert.ok(bodies.includes("Silent"), bodies.join(", "));
+    assert.ok(!bodies.includes("Cowbell"), bodies.join(", "));
+  });
+
+  await t.test("a stored Silent flag becomes the Silent body", () => {
+    const { seam, storage } = loadPage({ seed: {
+      "two-bells:custom": JSON.stringify({ silent: true, timbre: "church" }),
+      "two-bells:voice": "custom" } });
+    assert.equal(seam.getState().voice, "custom");
+    const kept = JSON.parse(storage.getItem("two-bells:custom"));
+    assert.equal(kept.timbre, "silent");
+    assert.ok(!("silent" in kept), JSON.stringify(kept));
   });
 
   await t.test("and a laptop will not buzz on a setting carried from a phone", () => {

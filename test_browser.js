@@ -217,7 +217,7 @@ test("a tuned bell is not lost by trying another", SUITE, async (t) => {
   });
 });
 
-test("the two switches on the custom bell", SUITE, async (t) => {
+test("Silent is a body, not a switch", SUITE, async (t) => {
   const OPEN_PANEL = `
     document.querySelector('[data-voice="custom"]').click();
     await wait(100);
@@ -225,45 +225,42 @@ test("the two switches on the custom bell", SUITE, async (t) => {
       .find((r) => r.querySelector(".dial-label").textContent === label);
   `;
 
-  await t.test("Silent is offered, and this browser is not offered vibration", () => {
-    // A headless Chrome is a laptop: navigator.vibrate exists and moves nothing,
-    // so the row must not be there. Which device gets which row is settled in
-    // test_logic.js, where the pointer type can be chosen.
+  await t.test("it is in the body picker, and no row of its own", () => {
     const seen = run(OPEN_PANEL + `
-      return Array.from(document.querySelectorAll(".tune .tune-row"))
-                  .map((r) => r.querySelector(".dial-label").textContent);
+      return { bodies: Array.from(document.querySelectorAll(".timbre[data-timbre]"))
+                            .map((b) => b.textContent),
+               rows: Array.from(document.querySelectorAll(".tune .tune-row"))
+                          .map((r) => r.querySelector(".dial-label").textContent) };
     `);
-    assert.ok(seen.includes("Silent"), seen.join(" | "));
-    assert.ok(!seen.includes("And vibrate"), seen.join(" | "));
+    assert.ok(seen.bodies.includes("Silent"), seen.bodies.join(", "));
+    assert.ok(!seen.rows.includes("Silent"), seen.rows.join(" | "));
+    // A headless Chrome is a laptop: navigator.vibrate exists and moves nothing.
+    // Which device gets that row is settled in test_logic.js.
+    assert.ok(!seen.rows.includes("And vibrate"), seen.rows.join(" | "));
   });
 
-  await t.test("Silent's knob slides, and the setting is remembered", () => {
-    const label = "Silent", key = "silent";
+  await t.test("choosing it leaves Ring live and the rest dimmed", () => {
+    // How long the page takes to empty is a real choice even when nothing sounds.
     const seen = run(OPEN_PANEL + `
-      const row = rowFor("Silent");
-      if (!row) throw new Error("no Silent row");
-      const button = row.querySelector(".switch");
-      const knob = () => getComputedStyle(button, "::after").transform;
-      const before = [button.getAttribute("aria-pressed"), knob()];
-      button.click();
-      await wait(300);
-      return { before, after: [button.getAttribute("aria-pressed"), knob()],
-               label: button.getAttribute("aria-label"),
-               stored: JSON.parse(localStorage.getItem("two-bells:custom")).silent };
+      document.querySelector('[data-timbre="silent"]').click();
+      await wait(150);
+      const state = {};
+      Array.from(document.querySelectorAll(".tune .tune-row")).forEach((r) => {
+        const slider = r.querySelector(".slider");
+        if (slider) state[r.querySelector(".dial-label").textContent] = slider.disabled;
+      });
+      return state;
     `);
-    assert.equal(seen.before[0], "false");
-    assert.equal(seen.after[0], "true");
-    // The knob has actually travelled, not merely changed colour.
-    assert.notEqual(seen.after[1], seen.before[1]);
-    assert.equal(seen.label, label);
-    assert.equal(seen.stored, true);
+    assert.equal(seen.Ring, false);
+    assert.equal(seen.Pitch, true);
+    assert.equal(seen.Brightness, true);
+    assert.equal(seen.Shimmer, true);
   });
 
   await t.test("a silent bell still empties the page and still ends the sit", () => {
-    // Silent means no sound, not no bell: the fade and the record are unchanged.
     const seen = run(OPEN_PANEL + `
-      rowFor("Silent").querySelector(".switch").click();
-      await wait(80);
+      document.querySelector('[data-timbre="silent"]').click();
+      await wait(150);
       setDurations(0, 20);
       $("start").click();
       seam.hurry({ bellIn: 0, endIn: 400 });
@@ -271,7 +268,8 @@ test("the two switches on the custom bell", SUITE, async (t) => {
       const mid = { fade: getComputedStyle($("sit")).getPropertyValue("--bell-fade").trim(),
                     legend: opacityOf(".legend") };
       await wait(500);
-      return { mid, rows: seam.getState().rows, phase: $("sit").dataset.phase };
+      return { mid, rows: seam.getState().rows, phase: $("sit").dataset.phase,
+               voice: seam.getState().voice };
     `);
     assert.notEqual(seen.mid.fade, "600ms");
     assert.ok(seen.mid.legend < 1, `legend at ${seen.mid.legend}`);

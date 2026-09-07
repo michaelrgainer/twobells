@@ -940,6 +940,11 @@
     // you is the stick rather than the metal -- hence the steep damping, the loud
     // wide transient, and the ring and shimmer it pins on the way in. Ten seconds
     // of shimmering cowbell would be a different instrument, and not a funny one.
+    // The absence of a body is still an answer to what it sounds like, so it
+    // belongs in the list rather than beside it as a switch. Ring stays live: how
+    // long the page takes to empty is a real choice even when nothing is heard.
+    { id: "silent",  label: "Silent",  synth: "silent",
+      fixed: ["pitch", "bright", "shimmer"], damping: 1, partials: [] },
     // Not a bell with strange partials -- its own noise, with its own generator.
     // Everything else here is a fundamental plus overtones, which is why every
     // attempt to reach a cowbell that way sounded like a short bell: nobody hears
@@ -960,7 +965,7 @@
 
   const CUSTOM_KEY = "two-bells:custom";
   let custom = { pitch: 330, ring: 10, bright: 60, shimmer: 20, timbre: "church",
-                 silent: false, vibrate: false };
+                 vibrate: false };
 
   // Desktop Chrome ships navigator.vibrate as a no-op, so the function existing
   // proves only that someone implemented the spec, not that anything will move.
@@ -983,7 +988,6 @@
       id: "custom", label: "Custom",
       first: custom.pitch,
       decay: custom.ring,
-      silent: custom.silent,
       synth: body.synth,
       vibrate: CAN_VIBRATE && custom.vibrate,
       // The body sets the relative decay rates; Brightness leans on them.
@@ -1027,7 +1031,8 @@
     if (voice.vibrate) navigator.vibrate([30, 40, 160]);
     // After the buzz, not before it: silent means no sound, not no bell. The
     // page still empties over the fade, and a phone still says so in the hand.
-    if (voice.silent) return;
+    // Before the audio guard, so a silent bell can still be a bell you feel.
+    if (voice.synth === "silent") return;
     if (!audio) return;
     if (voice.synth === "cowbell") return strikeCowbell();
     const now = audio.currentTime;
@@ -1143,6 +1148,13 @@
       const saved = JSON.parse(localStorage.getItem(CUSTOM_KEY) || "null");
       if (saved) custom = Object.assign(custom, saved);
     } catch (_) {}
+    // Silent used to be a flag beside the body rather than one of them. Migrated
+    // and written back, so one setting stops having two shapes on disk.
+    if ("silent" in custom) {
+      if (custom.silent) custom.timbre = "silent";
+      delete custom.silent;
+      try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom)); } catch (_) {}
+    }
     try {
       cowbell = localStorage.getItem(COWBELL_KEY) === "1";
     } catch (_) {}
@@ -1198,8 +1210,9 @@
     bodyRow.querySelector(".timbres").style.gridColumn = "1 / -1";
     el.tune.appendChild(bodyRow);
 
-    // A body that is one specific noise has nothing for these to say.
-    const locked = !!currentBody().fixed;
+    // What a body has nothing to say to: everything, for one that is a single
+    // specific noise, or a named few.
+    const locked = lockedMacros();
 
     MACROS.forEach((macro) => {
       const row = document.createElement("div");
@@ -1220,7 +1233,7 @@
       range.step = String(macro.step);
       range.value = String(custom[macro.key]);
       range.setAttribute("aria-label", macro.label);
-      range.disabled = locked;
+      range.disabled = locked.has(macro.key);
 
       const show = () => {
         value.textContent = custom[macro.key] + (macro.unit ? " " + macro.unit : "");
@@ -1247,12 +1260,11 @@
       el.tune.appendChild(row);
     });
 
-    el.tune.appendChild(buildToggleRow("Silent", "silent"));
     if (CAN_VIBRATE) el.tune.appendChild(buildToggleRow("And vibrate", "vibrate"));
   }
 
-  // Both switches are the same switch: a name on the left and a state on the
-  // right, struck afterwards so the change is heard -- or, for Silent, is not.
+  // A name on the left, a state on the right, struck afterwards so the change is
+  // heard. One switch, but written as though there could be others.
   // Some bodies cannot be any length: the slider follows rather than fighting it.
   function adoptBody(body) {
     let moved = false;
@@ -1262,6 +1274,13 @@
       moved = true;
     });
     return moved;
+  }
+
+  function lockedMacros() {
+    const fixed = currentBody().fixed;
+    if (!fixed) return new Set();
+    if (Array.isArray(fixed)) return new Set(fixed);
+    return new Set(MACROS.map((macro) => macro.key));
   }
 
   function rebuildTune() {
